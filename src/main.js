@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
-import { IFCROOT } from "web-ifc";
 
 const state = {
   ifcModel: null,
@@ -106,29 +105,42 @@ const getSpatialIndex = async (modelID) => {
 
 const extractIfcData = async (modelID) => {
   const ifcAPI = ifcLoader.ifcManager.ifcAPI;
-  const ids = ifcAPI.GetLineIDsWithType(modelID, IFCROOT);
+  const ids = ifcAPI.GetAllLines(modelID);
   const dataByGuid = {};
+
+  const safe = async (fn, fallback) => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  };
 
   for (let i = 0; i < ids.size(); i += 1) {
     const expressID = ids.get(i);
-    const attrs = await ifcLoader.ifcManager.getItemProperties(modelID, expressID, true);
-    const psets = await ifcLoader.ifcManager.getPropertySets(modelID, expressID, true);
-    const qtos = await ifcLoader.ifcManager.getQuantities(modelID, expressID, true);
-    const materials = await ifcLoader.ifcManager.getMaterialsProperties(modelID, expressID, true);
-    const typeProps = await ifcLoader.ifcManager.getTypeProperties(modelID, expressID, true);
-    const rawLine = ifcAPI.GetLine(modelID, expressID, true);
+    const rawLine = safe(() => ifcAPI.GetLine(modelID, expressID, true), null);
+    const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(modelID, expressID, true), null);
+    const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(modelID, expressID, true), []);
+    const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(modelID, expressID, true), []);
+    const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(modelID, expressID, true), []);
+    const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(modelID, expressID, true), {});
 
-    const globalId = attrs?.GlobalId?.value || attrs?.GlobalId || `#${expressID}`;
+    const globalId =
+      attrs?.GlobalId?.value ||
+      attrs?.GlobalId ||
+      rawLine?.GlobalId?.value ||
+      rawLine?.GlobalId ||
+      `#${expressID}`;
     const ifcType = rawLine?.type || attrs?.type || rawLine?.constructor?.name;
 
     dataByGuid[globalId] = {
       expressID,
       ifcType,
       attributes: attrs || {},
-      psets: psets || [],
-      qtos: qtos || [],
-      materials: materials || [],
-      type: typeProps || {},
+      psets,
+      qtos,
+      materials,
+      type: typeProps,
       relations: rawLine || {},
       spatial: state.spatialIndex[expressID] || []
     };
@@ -234,7 +246,9 @@ const readIfcFile = async (file) => {
   state.ifcData = await extractIfcData(state.modelID);
 
   buildList(state.ifcData);
-  dom.status.textContent = `${Object.keys(state.ifcData).length} element med GlobalId laddade.`;
+  const total = Object.keys(state.ifcData).length;
+  const withGlobalId = Object.keys(state.ifcData).filter((key) => !key.startsWith("#")).length;
+  dom.status.textContent = `${withGlobalId} element med GlobalId laddade (${total} rader totalt).`;
   dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
   dom.exportBtn.disabled = false;
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";

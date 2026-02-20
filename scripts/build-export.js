@@ -15,7 +15,9 @@ const threeExampleExtensionFix = {
     });
     buildApi.onLoad({ filter: /.*/, namespace: "three-examples" }, async (args) => {
       const resolved = require.resolve(args.path);
-      return { contents: await fs.readFile(resolved, "utf8"), loader: "js" };
+      const contents = await fs.readFile(resolved, "utf8");
+      const resolveDir = path.dirname(resolved);
+      return { contents, loader: "js", resolveDir };
     });
   }
 };

@@ -1,0 +1,22 @@
+{
+  "name": "ifc-offline-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:export": "node scripts/build-export.js",
+    "postinstall": "node scripts/copy-wasm.js"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "web-ifc": "^0.0.57",
+    "web-ifc-three": "^0.0.125"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.2",
+    "vite": "^5.0.12"
+  }
+}

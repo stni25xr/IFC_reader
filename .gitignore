@@ -1,0 +1,4 @@
+node_modules
+.DS_Store
+public/wasm/web-ifc.wasm
+public/export-bundle.js

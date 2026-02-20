@@ -70,7 +70,11 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
   scene.add(grid);
 
   const ifcLoader = new IFCLoader();
-  ifcLoader.ifcManager.setWasmPath(createWasmUrl(wasmBase64), true);
+  if (wasmBase64) {
+    ifcLoader.ifcManager.setWasmPath(createWasmUrl(wasmBase64), true);
+  } else {
+    ifcLoader.ifcManager.setWasmPath("/wasm/", true);
+  }
 
   const buffer = base64ToArrayBuffer(ifcBase64);
   const model = await ifcLoader.parse(buffer);

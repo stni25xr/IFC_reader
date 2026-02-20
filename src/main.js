@@ -32,7 +32,7 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
 const ifcLoader = new IFCLoader();
-ifcLoader.ifcManager.setWasmPath("/wasm/");
+ifcLoader.ifcManager.setWasmPath("/wasm/", true);
 
 const hoverMat = new THREE.MeshBasicMaterial({ color: 0x7bdff6, transparent: true, opacity: 0.35, depthTest: false });
 const selectMat = new THREE.MeshBasicMaterial({ color: 0xffd36e, transparent: true, opacity: 0.4, depthTest: false });

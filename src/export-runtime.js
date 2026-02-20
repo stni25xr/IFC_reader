@@ -52,12 +52,11 @@ const highlightElement = (listEl, globalId) => {
   });
 };
 
-const renderSection = (title, rows) => {
-  if (!rows.length) return "";
+const renderTable = (rows) => {
   const body = rows
     .map(([key, value]) => `<tr><td class="prop-key">${key}</td><td class="prop-value">${value}</td></tr>`)
     .join("");
-  return `<section class="prop-section"><h3>${title}</h3><table class="prop-table">${body}</table></section>`;
+  return `<table class="prop-table">${body}</table>`;
 };
 
 const formatValue = (value) => {
@@ -69,27 +68,28 @@ const formatValue = (value) => {
   return String(value);
 };
 
-const renderProperties = (propsEl, data, globalId) => {
-  const sections = [];
-  const attrs = Object.entries(data.attributes || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("General", [["GlobalId", globalId], ["IfcType", data.ifcType || ""], ...attrs]));
+const buildPropertyTabs = (data, globalId) => {
+  const attrs = data.attributes || {};
+  const summaryRows = [
+    ["GlobalId", globalId],
+    ["IfcType", data.ifcType || ""],
+    ["Name", formatValue(attrs.Name)],
+    ["Description", formatValue(attrs.Description)],
+    ["ObjectType", formatValue(attrs.ObjectType)],
+    ["Tag", formatValue(attrs.Tag)],
+    ["PredefinedType", formatValue(attrs.PredefinedType)]
+  ].filter((row) => row[1]);
 
-  const typeProps = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("Type", typeProps));
+  const locationRows = (data.spatial || []).map((node) => [
+    node.type || "Spatial",
+    `${node.name || ""} (#${node.expressID || ""})`
+  ]);
 
   const materialRows = (data.materials || []).flatMap((mat) =>
     Object.entries(mat || {}).map(([key, val]) => [`${mat?.type || "Material"}.${key}`, formatValue(val)])
   );
-  sections.push(renderSection("Materials", materialRows));
 
-  const relationRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("Relations", relationRows));
-
-  const spatialRows = (data.spatial || []).map((node) => [
-    node.type || "Spatial",
-    `${node.name || ""} (#${node.expressID || ""})`
-  ]);
-  sections.push(renderSection("Spatial", spatialRows));
+  const partOfRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
 
   const psetRows = (data.psets || []).flatMap((pset) => {
     const name = pset?.Name?.value || pset?.Name || pset?.type || "Pset";
@@ -108,7 +108,6 @@ const renderProperties = (propsEl, data, globalId) => {
     });
     return props;
   });
-  sections.push(renderSection("Pset", psetRows));
 
   const qtoRows = (data.qtos || []).flatMap((qto) => {
     const name = qto?.Name?.value || qto?.Name || qto?.type || "Qto";
@@ -128,15 +127,52 @@ const renderProperties = (propsEl, data, globalId) => {
     });
     return props;
   });
-  sections.push(renderSection("Qto", qtoRows));
 
-  propsEl.innerHTML = sections.filter(Boolean).join("") || "Inga parametrar hittades.";
+  const typeRows = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
+
+  return {
+    Summary: summaryRows,
+    Location: locationRows,
+    Material: materialRows,
+    PartOf: partOfRows,
+    Conflicts: [["Status", "Inga konflikter identifierade."]],
+    Psets: psetRows,
+    Qto: qtoRows,
+    Type: typeRows
+  };
+};
+
+const renderPropertyTabs = (tabsEl, tabs, stateRef) => {
+  if (!tabsEl) return;
+  tabsEl.innerHTML = "";
+  Object.keys(tabs).forEach((tab) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `tab${tab === stateRef.activeTab ? " active" : ""}`;
+    btn.textContent = tab;
+    btn.addEventListener("click", () => {
+      stateRef.activeTab = tab;
+      if (stateRef.lastPayload) renderProperties(stateRef, stateRef.lastPayload.data, stateRef.lastPayload.globalId);
+    });
+    tabsEl.appendChild(btn);
+  });
+};
+
+const renderProperties = (stateRef, data, globalId) => {
+  const tabs = buildPropertyTabs(data, globalId);
+  if (!tabs[stateRef.activeTab]) stateRef.activeTab = "Summary";
+  renderPropertyTabs(stateRef.tabsEl, tabs, stateRef);
+  const rows = tabs[stateRef.activeTab] || [];
+  stateRef.propsEl.innerHTML = rows.length ? renderTable(rows) : "Inga parametrar hittades.";
+  stateRef.lastPayload = { data, globalId };
 };
 
 export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, wasmBase64 }) => {
   const container = document.getElementById(containerId);
   const listEl = document.getElementById(listId);
   const propsEl = document.getElementById(propsId);
+  const tabsEl = document.getElementById("property-tabs");
+  const propState = { activeTab: "Summary", lastPayload: null, propsEl, tabsEl };
 
   const scene = createScene();
   const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 2000);
@@ -198,7 +234,7 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
       const item = Object.entries(ifcData).find(([, value]) => value.expressID === id);
       if (item) {
         const [globalId, data] = item;
-        renderProperties(propsEl, data, globalId);
+        renderProperties(propState, data, globalId);
         highlightElement(listEl, globalId);
       }
     } else if (lastHovered !== id) {
@@ -215,7 +251,7 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
     if (!data) return;
     lastSelected = data.expressID;
     setSubset(data.expressID, selectMat, "select");
-    renderProperties(propsEl, data, globalId);
+    renderProperties(propState, data, globalId);
     highlightElement(listEl, globalId);
   };
 

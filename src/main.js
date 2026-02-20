@@ -16,13 +16,15 @@ const dom = {
   viewer: document.getElementById("viewer"),
   list: document.getElementById("element-list"),
   props: document.getElementById("property-view"),
+  propertyTabs: document.getElementById("property-tabs"),
   status: document.getElementById("status"),
   viewerInfo: document.getElementById("viewer-info"),
   resetBtn: document.getElementById("reset-btn"),
   exportBtn: document.getElementById("export-btn"),
   dropzone: document.getElementById("dropzone"),
   fileInput: document.getElementById("file-input"),
-  fileButton: document.getElementById("file-button")
+  fileButton: document.getElementById("file-button"),
+  treePanel: document.getElementById("tree-panel")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -41,6 +43,8 @@ const selectMat = new THREE.MeshBasicMaterial({ color: 0xffd36e, transparent: tr
 
 let lastHovered = null;
 let lastSelected = null;
+let activePropTab = "Summary";
+let lastPropPayload = null;
 
 const initScene = () => {
   renderer.setSize(dom.viewer.clientWidth, dom.viewer.clientHeight);
@@ -221,6 +225,50 @@ const buildList = (data) => {
   });
 };
 
+const renderTreeNode = (node) => {
+  if (!node) return null;
+  const hasChildren = (node.children || []).length > 0;
+  const label = `${node.type || "Node"}${node.name ? `: ${node.name}` : ""}`;
+  const globalId = node.expressID ? state.ifcIndexByExpressId[node.expressID] : null;
+
+  if (!hasChildren) {
+    const leaf = document.createElement("div");
+    leaf.className = "tree-node";
+    const span = document.createElement("span");
+    span.className = "tree-label";
+    span.textContent = label;
+    span.addEventListener("click", () => {
+      if (globalId) selectByGlobalId(globalId);
+    });
+    leaf.appendChild(span);
+    return leaf;
+  }
+
+  const details = document.createElement("details");
+  details.className = "tree-node";
+  details.open = true;
+  const summary = document.createElement("summary");
+  summary.className = "tree-label";
+  summary.textContent = label;
+  summary.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (globalId) selectByGlobalId(globalId);
+  });
+  details.appendChild(summary);
+  (node.children || []).forEach((child) => {
+    const childNode = renderTreeNode(child);
+    if (childNode) details.appendChild(childNode);
+  });
+  return details;
+};
+
+const renderTree = (tree) => {
+  if (!dom.treePanel) return;
+  dom.treePanel.innerHTML = "";
+  const rootNode = renderTreeNode(tree);
+  if (rootNode) dom.treePanel.appendChild(rootNode);
+};
+
 const highlightList = (globalId) => {
   dom.list.querySelectorAll(".element-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.globalId === globalId);
@@ -237,12 +285,11 @@ const setSubset = (expressID, material, customID) => {
   ifcLoader.ifcManager.createSubset({ modelID: state.modelID, ids: [expressID], material, scene, removePrevious: true, customID });
 };
 
-const renderSection = (title, rows) => {
-  if (!rows.length) return "";
+const renderTable = (rows) => {
   const body = rows
     .map(([key, value]) => `<tr><td class="prop-key">${key}</td><td class="prop-value">${value}</td></tr>`)
     .join("");
-  return `<section class="prop-section"><h3>${title}</h3><table class="prop-table">${body}</table></section>`;
+  return `<table class="prop-table">${body}</table>`;
 };
 
 const formatValue = (value) => {
@@ -254,27 +301,28 @@ const formatValue = (value) => {
   return String(value);
 };
 
-const renderProperties = (data, globalId) => {
-  const sections = [];
-  const attrs = Object.entries(data.attributes || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("General", [["GlobalId", globalId], ["IfcType", data.ifcType || ""], ...attrs]));
+const buildPropertyTabs = (data, globalId) => {
+  const attrs = data.attributes || {};
+  const summaryRows = [
+    ["GlobalId", globalId],
+    ["IfcType", data.ifcType || ""],
+    ["Name", formatValue(attrs.Name)],
+    ["Description", formatValue(attrs.Description)],
+    ["ObjectType", formatValue(attrs.ObjectType)],
+    ["Tag", formatValue(attrs.Tag)],
+    ["PredefinedType", formatValue(attrs.PredefinedType)]
+  ].filter((row) => row[1]);
 
-  const typeProps = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("Type", typeProps));
+  const locationRows = (data.spatial || []).map((node) => [
+    node.type || "Spatial",
+    `${node.name || ""} (#${node.expressID || ""})`
+  ]);
 
   const materialRows = (data.materials || []).flatMap((mat) =>
     Object.entries(mat || {}).map(([key, val]) => [`${mat?.type || "Material"}.${key}`, formatValue(val)])
   );
-  sections.push(renderSection("Materials", materialRows));
 
-  const relationRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
-  sections.push(renderSection("Relations", relationRows));
-
-  const spatialRows = (data.spatial || []).map((node) => [
-    node.type || "Spatial",
-    `${node.name || ""} (#${node.expressID || ""})`
-  ]);
-  sections.push(renderSection("Spatial", spatialRows));
+  const partOfRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
 
   const psetRows = (data.psets || []).flatMap((pset) => {
     const name = pset?.Name?.value || pset?.Name || pset?.type || "Pset";
@@ -293,7 +341,6 @@ const renderProperties = (data, globalId) => {
     });
     return props;
   });
-  sections.push(renderSection("Pset", psetRows));
 
   const qtoRows = (data.qtos || []).flatMap((qto) => {
     const name = qto?.Name?.value || qto?.Name || qto?.type || "Qto";
@@ -313,9 +360,44 @@ const renderProperties = (data, globalId) => {
     });
     return props;
   });
-  sections.push(renderSection("Qto", qtoRows));
 
-  dom.props.innerHTML = sections.filter(Boolean).join("") || "Inga parametrar hittades.";
+  const typeRows = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
+
+  return {
+    Summary: summaryRows,
+    Location: locationRows,
+    Material: materialRows,
+    PartOf: partOfRows,
+    Conflicts: [["Status", "Inga konflikter identifierade."]],
+    Psets: psetRows,
+    Qto: qtoRows,
+    Type: typeRows
+  };
+};
+
+const renderPropertyTabs = (tabs) => {
+  if (!dom.propertyTabs) return;
+  dom.propertyTabs.innerHTML = "";
+  Object.keys(tabs).forEach((tab) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `tab${tab === activePropTab ? " active" : ""}`;
+    btn.textContent = tab;
+    btn.addEventListener("click", () => {
+      activePropTab = tab;
+      if (lastPropPayload) renderProperties(lastPropPayload.data, lastPropPayload.globalId);
+    });
+    dom.propertyTabs.appendChild(btn);
+  });
+};
+
+const renderProperties = (data, globalId) => {
+  const tabs = buildPropertyTabs(data, globalId);
+  if (!tabs[activePropTab]) activePropTab = "Summary";
+  renderPropertyTabs(tabs);
+  const rows = tabs[activePropTab] || [];
+  dom.props.innerHTML = rows.length ? renderTable(rows) : "Inga parametrar hittades.";
+  lastPropPayload = { data, globalId };
 };
 
 const selectByGlobalId = async (globalId) => {
@@ -380,6 +462,7 @@ const readIfcFile = async (file) => {
   scene.add(model);
   state.ifcModel = model;
   state.modelID = model.modelID;
+  state.spatialTree = await ifcLoader.ifcManager.getSpatialStructure(state.modelID);
   state.spatialIndex = await getSpatialIndex(state.modelID);
   const indexResult = await extractIfcIndex(state.modelID, (done, total) => {
     dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
@@ -389,11 +472,13 @@ const readIfcFile = async (file) => {
   state.ifcDataFull = {};
 
   buildList(state.ifcIndex);
+  renderTree(state.spatialTree);
   const total = Object.keys(state.ifcIndex).length;
   dom.status.textContent = `${total} element med GlobalId laddade.`;
   dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
   dom.exportBtn.disabled = false;
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
+  if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
 };
 
 const setupDropzone = () => {
@@ -450,13 +535,14 @@ const buildExportHtml = async () => {
     .item { padding:8px; border-radius:8px; background:#1f2346; cursor:pointer; }
     .item.active { outline: 2px solid #7bdff6; }
     .tag { font-size:10px; color:#ffd36e; margin-left:6px; }
-    #props { font-size:12px; background:#0c0e1e; padding:10px; border-radius:8px; display:flex; flex-direction:column; gap:12px; }
-    .prop-section { border:1px solid rgba(123,223,246,0.12); border-radius:8px; overflow:hidden; background:rgba(23,26,52,0.6); }
-    .prop-section h3 { margin:0; padding:8px 10px; font-size:12px; text-transform:uppercase; background:rgba(123,223,246,0.12); }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+    .tab { padding:6px 10px; font-size:12px; border-radius:6px; background:#e8ebf2; color:#1d1f2b; border:1px solid #d7dbe3; cursor:pointer; }
+    .tab.active { background:#7bdff6; color:#081018; border-color:transparent; }
+    #props { font-size:12px; background:#f8f9fb; color:#1d1f2b; padding:8px; border-radius:8px; border:1px solid #d7dbe3; }
     .prop-table { width:100%; border-collapse:collapse; font-size:12px; }
-    .prop-table tr:nth-child(even) { background:rgba(15,18,38,0.6); }
-    .prop-table td { padding:6px 8px; vertical-align:top; border-bottom:1px solid rgba(123,223,246,0.08); word-break:break-word; }
-    .prop-key { width:40%; color:#a7b0d9; }
+    .prop-table tr:nth-child(even) { background:#eef1f6; }
+    .prop-table td { padding:6px 8px; vertical-align:top; border-bottom:1px solid #e1e5ec; word-break:break-word; }
+    .prop-key { width:40%; color:#3f4661; font-weight:600; }
   </style>
 </head>
 <body>
@@ -467,6 +553,7 @@ const buildExportHtml = async () => {
   <main id="viewer"></main>
   <aside id="right">
     <h3>Parametrar</h3>
+    <div id="property-tabs" class="tabs"></div>
     <div id="props">Välj ett element.</div>
   </aside>
 

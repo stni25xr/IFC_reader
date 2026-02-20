@@ -16,6 +16,10 @@
         --accent-2: #ffd36e;
         --danger: #ff7a7a;
         --success: #7af1a8;
+        --light-bg: #f3f4f6;
+        --light-panel: #f8f9fb;
+        --light-border: #d7dbe3;
+        --light-text: #1d1f2b;
       }
       * { box-sizing: border-box; }
       body {
@@ -25,16 +29,16 @@
         color: var(--text);
         height: 100vh;
         display: grid;
-        grid-template-columns: 320px 1fr 360px;
+        grid-template-columns: 360px 1fr;
         grid-template-rows: 100%;
         overflow: hidden;
       }
-      #left-panel,
-      #right-panel {
+      #left-panel {
         background: linear-gradient(180deg, rgba(23,26,52,0.98), rgba(11,12,24,0.98));
         padding: 20px;
         overflow: auto;
       }
+      #right-panel { display: none; }
       #viewer {
         position: relative;
         background: linear-gradient(160deg, #0b0c1f 0%, #0d132e 100%);
@@ -90,6 +94,83 @@
         flex-direction: column;
         gap: 8px;
       }
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .tab {
+        padding: 6px 10px;
+        font-size: 12px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.08);
+        color: var(--text);
+        border: 1px solid rgba(255,255,255,0.12);
+        cursor: pointer;
+      }
+      .tab.active {
+        background: var(--accent);
+        color: #081018;
+        border-color: transparent;
+      }
+      #tree-panel {
+        background: var(--light-panel);
+        color: var(--light-text);
+        border: 1px solid var(--light-border);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 12px;
+        max-height: 240px;
+        overflow: auto;
+      }
+      .tree-node {
+        font-size: 12px;
+        margin: 2px 0;
+      }
+      .tree-label {
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+        display: inline-block;
+      }
+      .tree-label:hover {
+        background: #e7ebf4;
+      }
+      #property-tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      #property-view {
+        font-size: 12px;
+        background: var(--light-panel);
+        color: var(--light-text);
+        padding: 8px;
+        border-radius: 10px;
+        border: 1px solid var(--light-border);
+        display: block;
+      }
+      .prop-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .prop-table tr:nth-child(even) {
+        background: #eef1f6;
+      }
+      .prop-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #e1e5ec;
+        vertical-align: top;
+        word-break: break-word;
+      }
+      .prop-key {
+        width: 40%;
+        color: #3f4661;
+        font-weight: 600;
+      }
       .element-item {
         padding: 10px;
         border-radius: 10px;
@@ -114,48 +195,6 @@
         background: rgba(255,211,110,0.15);
         color: var(--accent-2);
         margin-left: 6px;
-      }
-      #property-view {
-        font-size: 12px;
-        background: rgba(12,14,30,0.6);
-        padding: 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(123,223,246,0.2);
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .prop-section {
-        border: 1px solid rgba(123,223,246,0.12);
-        border-radius: 8px;
-        overflow: hidden;
-        background: rgba(23,26,52,0.6);
-      }
-      .prop-section h3 {
-        margin: 0;
-        padding: 8px 10px;
-        font-size: 12px;
-        letter-spacing: 0.4px;
-        text-transform: uppercase;
-        background: rgba(123,223,246,0.12);
-      }
-      .prop-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-      }
-      .prop-table tr:nth-child(even) {
-        background: rgba(15,18,38,0.6);
-      }
-      .prop-table td {
-        padding: 6px 8px;
-        vertical-align: top;
-        border-bottom: 1px solid rgba(123,223,246,0.08);
-        word-break: break-word;
-      }
-      .prop-key {
-        width: 40%;
-        color: var(--muted);
       }
       #status {
         font-size: 12px;
@@ -195,6 +234,13 @@
         <h1>IFC Offline Viewer</h1>
         <div class="hint">Ladda en IFC-fil och klicka på objekt för full metadata.</div>
       </header>
+      <div class="tabs" id="left-tabs">
+        <button class="tab active" type="button">Navigation</button>
+        <button class="tab" type="button">Smart views</button>
+        <button class="tab" type="button">Conflicts</button>
+        <button class="tab" type="button">Lists</button>
+        <button class="tab" type="button">Issues</button>
+      </div>
       <div id="dropzone" class="dropzone">
         <div>Drag & drop IFC här</div>
         <div class="hint">eller använd filväljaren</div>
@@ -205,8 +251,15 @@
         <button id="export-btn" class="btn secondary" type="button" disabled>Exportera HTML</button>
         <div id="status">Ingen fil laddad.</div>
       </div>
+      <h2 style="font-size:14px; margin-top:18px;">Navigation</h2>
+      <div id="tree-panel">
+        <div class="hint">Ingen modell ännu.</div>
+      </div>
       <h2 style="font-size:14px; margin-top:18px;">Elementlista</h2>
       <div id="element-list"></div>
+      <h2 style="font-size:14px; margin-top:18px;">Egenskaper</h2>
+      <div id="property-tabs" class="tabs"></div>
+      <div id="property-view">Välj ett element för att se alla IFC-parametrar.</div>
     </aside>
 
     <main id="viewer">
@@ -215,11 +268,6 @@
         <button id="reset-btn" class="btn secondary" type="button">Återställ vy</button>
       </div>
     </main>
-
-    <aside id="right-panel">
-      <h2 style="font-size:14px; margin-top:0;">Parametrar</h2>
-      <div id="property-view">Välj ett element för att se alla IFC-parametrar.</div>
-    </aside>
 
     <script type="module" src="./src/main.js"></script>
   </body>

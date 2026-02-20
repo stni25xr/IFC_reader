@@ -103,10 +103,11 @@ const getSpatialIndex = async (modelID) => {
   return index;
 };
 
-const extractIfcData = async (modelID) => {
+const extractIfcData = async (modelID, onProgress) => {
   const ifcAPI = ifcLoader.ifcManager.ifcAPI;
   const ids = ifcAPI.GetAllLines(modelID);
   const dataByGuid = {};
+  const total = ids.size();
 
   const safe = async (fn, fallback) => {
     try {
@@ -116,9 +117,9 @@ const extractIfcData = async (modelID) => {
     }
   };
 
-  for (let i = 0; i < ids.size(); i += 1) {
+  for (let i = 0; i < total; i += 1) {
     const expressID = ids.get(i);
-    const rawLine = safe(() => ifcAPI.GetLine(modelID, expressID, true), null);
+    const rawLine = await safe(() => ifcAPI.GetLine(modelID, expressID, true), null);
     const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(modelID, expressID, true), null);
     const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(modelID, expressID, true), []);
     const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(modelID, expressID, true), []);
@@ -144,6 +145,11 @@ const extractIfcData = async (modelID) => {
       relations: rawLine || {},
       spatial: state.spatialIndex[expressID] || []
     };
+
+    if (i % 200 === 0) {
+      if (onProgress) onProgress(i + 1, total);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   return dataByGuid;
@@ -243,7 +249,9 @@ const readIfcFile = async (file) => {
   state.ifcModel = model;
   state.modelID = model.modelID;
   state.spatialIndex = await getSpatialIndex(state.modelID);
-  state.ifcData = await extractIfcData(state.modelID);
+  state.ifcData = await extractIfcData(state.modelID, (done, total) => {
+    dom.status.textContent = `Extraherar IFC-data... ${done}/${total}`;
+  });
 
   buildList(state.ifcData);
   const total = Object.keys(state.ifcData).length;

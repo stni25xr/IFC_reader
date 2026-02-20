@@ -5,7 +5,9 @@ import { IFCLoader } from "web-ifc-three/IFCLoader";
 const state = {
   ifcModel: null,
   ifcArrayBuffer: null,
-  ifcData: {},
+  ifcIndex: {},
+  ifcIndexByExpressId: {},
+  ifcDataFull: {},
   spatialIndex: {},
   modelID: null
 };
@@ -103,10 +105,11 @@ const getSpatialIndex = async (modelID) => {
   return index;
 };
 
-const extractIfcData = async (modelID, onProgress) => {
+const extractIfcIndex = async (modelID, onProgress) => {
   const ifcAPI = ifcLoader.ifcManager.ifcAPI;
   const ids = ifcAPI.GetAllLines(modelID);
-  const dataByGuid = {};
+  const indexByGuid = {};
+  const indexByExpressId = {};
   const total = ids.size();
 
   const safe = async (fn, fallback) => {
@@ -121,10 +124,6 @@ const extractIfcData = async (modelID, onProgress) => {
     const expressID = ids.get(i);
     const rawLine = await safe(() => ifcAPI.GetLine(modelID, expressID, true), null);
     const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(modelID, expressID, true), null);
-    const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(modelID, expressID, true), []);
-    const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(modelID, expressID, true), []);
-    const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(modelID, expressID, true), []);
-    const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(modelID, expressID, true), {});
 
     const globalId =
       attrs?.GlobalId?.value ||
@@ -133,26 +132,80 @@ const extractIfcData = async (modelID, onProgress) => {
       rawLine?.GlobalId ||
       `#${expressID}`;
     const ifcType = rawLine?.type || attrs?.type || rawLine?.constructor?.name;
+    const name = attrs?.Name?.value || attrs?.Name || rawLine?.Name?.value || rawLine?.Name || attrs?.ObjectType?.value || "";
 
-    dataByGuid[globalId] = {
+    if (String(globalId).startsWith("#")) {
+      if (i % 400 === 0) {
+        if (onProgress) onProgress(i + 1, total);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      continue;
+    }
+
+    indexByGuid[globalId] = {
       expressID,
       ifcType,
-      attributes: attrs || {},
-      psets,
-      qtos,
-      materials,
-      type: typeProps,
-      relations: rawLine || {},
-      spatial: state.spatialIndex[expressID] || []
+      name,
+      attributes: attrs || {}
     };
+    indexByExpressId[expressID] = globalId;
 
-    if (i % 200 === 0) {
+    if (i % 400 === 0) {
       if (onProgress) onProgress(i + 1, total);
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
 
-  return dataByGuid;
+  return { indexByGuid, indexByExpressId };
+};
+
+const getFullDataForExpressId = async (expressID, globalId) => {
+  if (state.ifcDataFull[globalId]) return state.ifcDataFull[globalId];
+  const ifcAPI = ifcLoader.ifcManager.ifcAPI;
+  const safe = async (fn, fallback) => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  };
+
+  const rawLine = await safe(() => ifcAPI.GetLine(state.modelID, expressID, true), null);
+  const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(state.modelID, expressID, true), null);
+  const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(state.modelID, expressID, true), []);
+  const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(state.modelID, expressID, true), []);
+  const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(state.modelID, expressID, true), []);
+  const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(state.modelID, expressID, true), {});
+
+  const full = {
+    expressID,
+    ifcType: rawLine?.type || attrs?.type || rawLine?.constructor?.name,
+    attributes: attrs || {},
+    psets,
+    qtos,
+    materials,
+    type: typeProps,
+    relations: rawLine || {},
+    spatial: state.spatialIndex[expressID] || []
+  };
+  state.ifcDataFull[globalId] = full;
+  return full;
+};
+
+const extractAllFullData = async (onProgress) => {
+  const entries = Object.entries(state.ifcIndex);
+  const total = entries.length;
+  const result = {};
+  for (let i = 0; i < total; i += 1) {
+    const [globalId, item] = entries[i];
+    const data = await getFullDataForExpressId(item.expressID, globalId);
+    result[globalId] = data;
+    if (i % 100 === 0) {
+      if (onProgress) onProgress(i + 1, total);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  return result;
 };
 
 const buildList = (data) => {
@@ -161,7 +214,7 @@ const buildList = (data) => {
     const row = document.createElement("div");
     row.className = "element-item";
     row.dataset.globalId = globalId;
-    const label = item.attributes?.Name?.value || item.attributes?.Name || item.attributes?.ObjectType?.value || "(Namnlös)";
+    const label = item.name || item.attributes?.Name?.value || item.attributes?.Name || item.attributes?.ObjectType?.value || "(Namnlös)";
     row.innerHTML = `${label}<span class=\"tag\">${item.ifcType || "IFC"}</span><div class=\"hint\">${globalId}</div>`;
     row.addEventListener("click", () => selectByGlobalId(globalId));
     dom.list.appendChild(row);
@@ -184,13 +237,96 @@ const setSubset = (expressID, material, customID) => {
   ifcLoader.ifcManager.createSubset({ modelID: state.modelID, ids: [expressID], material, scene, removePrevious: true, customID });
 };
 
-const selectByGlobalId = (globalId) => {
-  const data = state.ifcData[globalId];
-  if (!data) return;
-  lastSelected = data.expressID;
-  setSubset(data.expressID, selectMat, "select");
-  dom.props.textContent = JSON.stringify(data, null, 2);
+const renderSection = (title, rows) => {
+  if (!rows.length) return "";
+  const body = rows
+    .map(([key, value]) => `<tr><td class="prop-key">${key}</td><td class="prop-value">${value}</td></tr>`)
+    .join("");
+  return `<section class="prop-section"><h3>${title}</h3><table class="prop-table">${body}</table></section>`;
+};
+
+const formatValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    if ("value" in value) return String(value.value ?? "");
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+const renderProperties = (data, globalId) => {
+  const sections = [];
+  const attrs = Object.entries(data.attributes || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("General", [["GlobalId", globalId], ["IfcType", data.ifcType || ""], ...attrs]));
+
+  const typeProps = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("Type", typeProps));
+
+  const materialRows = (data.materials || []).flatMap((mat) =>
+    Object.entries(mat || {}).map(([key, val]) => [`${mat?.type || "Material"}.${key}`, formatValue(val)])
+  );
+  sections.push(renderSection("Materials", materialRows));
+
+  const relationRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("Relations", relationRows));
+
+  const spatialRows = (data.spatial || []).map((node) => [
+    node.type || "Spatial",
+    `${node.name || ""} (#${node.expressID || ""})`
+  ]);
+  sections.push(renderSection("Spatial", spatialRows));
+
+  const psetRows = (data.psets || []).flatMap((pset) => {
+    const name = pset?.Name?.value || pset?.Name || pset?.type || "Pset";
+    const props = (pset?.HasProperties || []).map((prop) => {
+      const key = prop?.Name?.value || prop?.Name || "Property";
+      return [
+        `${name}.${key}`,
+        formatValue(
+          prop?.NominalValue ??
+            prop?.NominalValue?.value ??
+            prop?.Value ??
+            prop?.Value?.value ??
+            prop
+        )
+      ];
+    });
+    return props;
+  });
+  sections.push(renderSection("Pset", psetRows));
+
+  const qtoRows = (data.qtos || []).flatMap((qto) => {
+    const name = qto?.Name?.value || qto?.Name || qto?.type || "Qto";
+    const props = (qto?.Quantities || qto?.HasQuantities || []).map((prop) => {
+      const key = prop?.Name?.value || prop?.Name || "Quantity";
+      return [
+        `${name}.${key}`,
+        formatValue(
+          prop?.LengthValue ??
+            prop?.AreaValue ??
+            prop?.VolumeValue ??
+            prop?.CountValue ??
+            prop?.WeightValue ??
+            prop
+        )
+      ];
+    });
+    return props;
+  });
+  sections.push(renderSection("Qto", qtoRows));
+
+  dom.props.innerHTML = sections.filter(Boolean).join("") || "Inga parametrar hittades.";
+};
+
+const selectByGlobalId = async (globalId) => {
+  const indexItem = state.ifcIndex[globalId];
+  if (!indexItem) return;
+  lastSelected = indexItem.expressID;
+  setSubset(indexItem.expressID, selectMat, "select");
   highlightList(globalId);
+  dom.props.textContent = "Laddar parametrar...";
+  const data = await getFullDataForExpressId(indexItem.expressID, globalId);
+  renderProperties(data, globalId);
 };
 
 const handlePick = (event, isClick) => {
@@ -210,12 +346,8 @@ const handlePick = (event, isClick) => {
   if (isClick) {
     lastSelected = id;
     setSubset(id, selectMat, "select");
-    const match = Object.entries(state.ifcData).find(([, value]) => value.expressID === id);
-    if (match) {
-      const [globalId, data] = match;
-      dom.props.textContent = JSON.stringify(data, null, 2);
-      highlightList(globalId);
-    }
+    const globalId = state.ifcIndexByExpressId[id];
+    if (globalId) selectByGlobalId(globalId);
   } else if (lastHovered !== id) {
     lastHovered = id;
     setSubset(id, hoverMat, "hover");
@@ -249,14 +381,16 @@ const readIfcFile = async (file) => {
   state.ifcModel = model;
   state.modelID = model.modelID;
   state.spatialIndex = await getSpatialIndex(state.modelID);
-  state.ifcData = await extractIfcData(state.modelID, (done, total) => {
-    dom.status.textContent = `Extraherar IFC-data... ${done}/${total}`;
+  const indexResult = await extractIfcIndex(state.modelID, (done, total) => {
+    dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
   });
+  state.ifcIndex = indexResult.indexByGuid;
+  state.ifcIndexByExpressId = indexResult.indexByExpressId;
+  state.ifcDataFull = {};
 
-  buildList(state.ifcData);
-  const total = Object.keys(state.ifcData).length;
-  const withGlobalId = Object.keys(state.ifcData).filter((key) => !key.startsWith("#")).length;
-  dom.status.textContent = `${withGlobalId} element med GlobalId laddade (${total} rader totalt).`;
+  buildList(state.ifcIndex);
+  const total = Object.keys(state.ifcIndex).length;
+  dom.status.textContent = `${total} element med GlobalId laddade.`;
   dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
   dom.exportBtn.disabled = false;
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
@@ -293,11 +427,14 @@ const buildExportHtml = async () => {
   const wasmBuffer = await wasmResponse.arrayBuffer();
   const wasmBase64 = arrayBufferToBase64(wasmBuffer);
 
-  const bundleResponse = await fetch("/export-bundle.js");
+  const bundleResponse = await fetch(`${import.meta.env.BASE_URL}export-bundle.js`);
   if (!bundleResponse.ok) throw new Error("Saknar export-bundle.js. Kör npm run build:export");
   const bundleCode = await bundleResponse.text();
 
-  const dataJson = JSON.stringify(state.ifcData);
+  const fullData = await extractAllFullData((done, total) => {
+    dom.status.textContent = `Samlar all IFC-data... ${done}/${total}`;
+  });
+  const dataJson = JSON.stringify(fullData);
 
   return `<!doctype html>
 <html lang="sv">
@@ -313,7 +450,13 @@ const buildExportHtml = async () => {
     .item { padding:8px; border-radius:8px; background:#1f2346; cursor:pointer; }
     .item.active { outline: 2px solid #7bdff6; }
     .tag { font-size:10px; color:#ffd36e; margin-left:6px; }
-    #props { white-space: pre-wrap; font-size:12px; background:#0c0e1e; padding:10px; border-radius:8px; }
+    #props { font-size:12px; background:#0c0e1e; padding:10px; border-radius:8px; display:flex; flex-direction:column; gap:12px; }
+    .prop-section { border:1px solid rgba(123,223,246,0.12); border-radius:8px; overflow:hidden; background:rgba(23,26,52,0.6); }
+    .prop-section h3 { margin:0; padding:8px 10px; font-size:12px; text-transform:uppercase; background:rgba(123,223,246,0.12); }
+    .prop-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .prop-table tr:nth-child(even) { background:rgba(15,18,38,0.6); }
+    .prop-table td { padding:6px 8px; vertical-align:top; border-bottom:1px solid rgba(123,223,246,0.08); word-break:break-word; }
+    .prop-key { width:40%; color:#a7b0d9; }
   </style>
 </head>
 <body>

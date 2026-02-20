@@ -52,6 +52,87 @@ const highlightElement = (listEl, globalId) => {
   });
 };
 
+const renderSection = (title, rows) => {
+  if (!rows.length) return "";
+  const body = rows
+    .map(([key, value]) => `<tr><td class="prop-key">${key}</td><td class="prop-value">${value}</td></tr>`)
+    .join("");
+  return `<section class="prop-section"><h3>${title}</h3><table class="prop-table">${body}</table></section>`;
+};
+
+const formatValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    if ("value" in value) return String(value.value ?? "");
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+const renderProperties = (propsEl, data, globalId) => {
+  const sections = [];
+  const attrs = Object.entries(data.attributes || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("General", [["GlobalId", globalId], ["IfcType", data.ifcType || ""], ...attrs]));
+
+  const typeProps = Object.entries(data.type || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("Type", typeProps));
+
+  const materialRows = (data.materials || []).flatMap((mat) =>
+    Object.entries(mat || {}).map(([key, val]) => [`${mat?.type || "Material"}.${key}`, formatValue(val)])
+  );
+  sections.push(renderSection("Materials", materialRows));
+
+  const relationRows = Object.entries(data.relations || {}).map(([key, val]) => [key, formatValue(val)]);
+  sections.push(renderSection("Relations", relationRows));
+
+  const spatialRows = (data.spatial || []).map((node) => [
+    node.type || "Spatial",
+    `${node.name || ""} (#${node.expressID || ""})`
+  ]);
+  sections.push(renderSection("Spatial", spatialRows));
+
+  const psetRows = (data.psets || []).flatMap((pset) => {
+    const name = pset?.Name?.value || pset?.Name || pset?.type || "Pset";
+    const props = (pset?.HasProperties || []).map((prop) => {
+      const key = prop?.Name?.value || prop?.Name || "Property";
+      return [
+        `${name}.${key}`,
+        formatValue(
+          prop?.NominalValue ??
+            prop?.NominalValue?.value ??
+            prop?.Value ??
+            prop?.Value?.value ??
+            prop
+        )
+      ];
+    });
+    return props;
+  });
+  sections.push(renderSection("Pset", psetRows));
+
+  const qtoRows = (data.qtos || []).flatMap((qto) => {
+    const name = qto?.Name?.value || qto?.Name || qto?.type || "Qto";
+    const props = (qto?.Quantities || qto?.HasQuantities || []).map((prop) => {
+      const key = prop?.Name?.value || prop?.Name || "Quantity";
+      return [
+        `${name}.${key}`,
+        formatValue(
+          prop?.LengthValue ??
+            prop?.AreaValue ??
+            prop?.VolumeValue ??
+            prop?.CountValue ??
+            prop?.WeightValue ??
+            prop
+        )
+      ];
+    });
+    return props;
+  });
+  sections.push(renderSection("Qto", qtoRows));
+
+  propsEl.innerHTML = sections.filter(Boolean).join("") || "Inga parametrar hittades.";
+};
+
 export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, wasmBase64 }) => {
   const container = document.getElementById(containerId);
   const listEl = document.getElementById(listId);
@@ -117,7 +198,7 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
       const item = Object.entries(ifcData).find(([, value]) => value.expressID === id);
       if (item) {
         const [globalId, data] = item;
-        propsEl.textContent = JSON.stringify(data, null, 2);
+        renderProperties(propsEl, data, globalId);
         highlightElement(listEl, globalId);
       }
     } else if (lastHovered !== id) {
@@ -134,7 +215,7 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
     if (!data) return;
     lastSelected = data.expressID;
     setSubset(data.expressID, selectMat, "select");
-    propsEl.textContent = JSON.stringify(data, null, 2);
+    renderProperties(propsEl, data, globalId);
     highlightElement(listEl, globalId);
   };
 

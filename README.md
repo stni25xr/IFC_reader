@@ -16,6 +16,19 @@ Detta kopierar automatiskt `web-ifc.wasm` till `public/wasm/` via `postinstall`.
 npm run dev
 ```
 
+## Publicera online (GitHub Pages)
+
+Detta repo är förberett för GitHub Pages på:
+
+`https://stni25xr.github.io/IFC_reader/`
+
+### Steg
+
+1. Pusha till `main`.
+2. Gå till GitHub → **Settings** → **Pages**.
+3. Under **Build and deployment**, välj **GitHub Actions**.
+4. Vänta tills workflowen **Deploy to GitHub Pages** är klar.
+
 ## Ladda en IFC
 
 1. Dra och släpp en `.ifc`-fil i drop-zonen, eller klicka på **Välj IFC-fil**.

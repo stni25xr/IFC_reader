@@ -430,17 +430,30 @@ const handlePick = (event, isClick) => {
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects([state.ifcModel], true);
+  const hits = raycaster.intersectObjects(scene.children, true);
+  if (isClick) console.log("[pick] click", { x: event.clientX, y: event.clientY });
   console.log("[pick] hits:", hits.length);
   if (!hits.length) {
     if (!isClick) clearSubset("hover");
     if (isClick) clearSelection();
     return;
   }
-  const hit = hits[0];
-  const id = getExpressIdFromHit(hit);
+  let id = null;
+  let hit = null;
+  for (const candidate of hits) {
+    const candidateId = getExpressIdFromHit(candidate);
+    if (candidateId) {
+      id = candidateId;
+      hit = candidate;
+      break;
+    }
+  }
   console.log("[pick] expressID:", id);
-  if (!id) return;
+  if (!id || !hit) {
+    if (!isClick) clearSubset("hover");
+    if (isClick) clearSelection();
+    return;
+  }
   if (isClick) {
     lastSelected = id;
     setSubset(id, selectMat, "select");
@@ -456,6 +469,7 @@ const handlePick = (event, isClick) => {
   }
 };
 
+renderer.domElement.style.pointerEvents = "auto";
 renderer.domElement.addEventListener("pointermove", (event) => handlePick(event, false));
 renderer.domElement.addEventListener("pointerdown", (event) => handlePick(event, true));
 

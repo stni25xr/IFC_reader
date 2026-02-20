@@ -285,6 +285,19 @@ const setSubset = (expressID, material, customID) => {
   ifcLoader.ifcManager.createSubset({ modelID: state.modelID, ids: [expressID], material, scene, removePrevious: true, customID });
 };
 
+const clearSelection = () => {
+  lastSelected = null;
+  clearSubset("select");
+  dom.props.textContent = "Klicka på ett element för att se metadata.";
+  highlightList(null);
+};
+
+const getExpressIdFromHit = (hit) => {
+  const fromManager = ifcLoader.ifcManager.getExpressId(hit.object.geometry, hit.faceIndex);
+  if (fromManager) return fromManager;
+  return hit.object.userData?.ifcId || hit.object.userData?.expressID || null;
+};
+
 const renderTable = (rows) => {
   const body = rows
     .map(([key, value]) => `<tr><td class="prop-key">${key}</td><td class="prop-value">${value}</td></tr>`)
@@ -417,27 +430,34 @@ const handlePick = (event, isClick) => {
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObject(state.ifcModel, true);
+  const hits = raycaster.intersectObjects([state.ifcModel], true);
+  console.log("[pick] hits:", hits.length);
   if (!hits.length) {
     if (!isClick) clearSubset("hover");
+    if (isClick) clearSelection();
     return;
   }
   const hit = hits[0];
-  const id = ifcLoader.ifcManager.getExpressId(hit.object.geometry, hit.faceIndex);
+  const id = getExpressIdFromHit(hit);
+  console.log("[pick] expressID:", id);
   if (!id) return;
   if (isClick) {
     lastSelected = id;
     setSubset(id, selectMat, "select");
     const globalId = state.ifcIndexByExpressId[id];
-    if (globalId) selectByGlobalId(globalId);
+    if (globalId) {
+      selectByGlobalId(globalId);
+    } else {
+      dom.props.textContent = "Ingen GlobalId hittades för valt element.";
+    }
   } else if (lastHovered !== id) {
     lastHovered = id;
     setSubset(id, hoverMat, "hover");
   }
 };
 
-renderer.domElement.addEventListener("mousemove", (event) => handlePick(event, false));
-renderer.domElement.addEventListener("click", (event) => handlePick(event, true));
+renderer.domElement.addEventListener("pointermove", (event) => handlePick(event, false));
+renderer.domElement.addEventListener("pointerdown", (event) => handlePick(event, true));
 
 const resetCamera = () => {
   camera.position.set(14, 10, 14);

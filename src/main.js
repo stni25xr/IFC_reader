@@ -32,7 +32,8 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
 const ifcLoader = new IFCLoader();
-ifcLoader.ifcManager.setWasmPath("/wasm/", true);
+const wasmBasePath = `${import.meta.env.BASE_URL}wasm/`;
+ifcLoader.ifcManager.setWasmPath(wasmBasePath, true);
 
 const hoverMat = new THREE.MeshBasicMaterial({ color: 0x7bdff6, transparent: true, opacity: 0.35, depthTest: false });
 const selectMat = new THREE.MeshBasicMaterial({ color: 0xffd36e, transparent: true, opacity: 0.4, depthTest: false });
@@ -265,7 +266,7 @@ const buildExportHtml = async () => {
   if (!state.ifcArrayBuffer) return null;
 
   const ifcBase64 = arrayBufferToBase64(state.ifcArrayBuffer);
-  const wasmResponse = await fetch("/wasm/web-ifc.wasm");
+  const wasmResponse = await fetch(`${wasmBasePath}web-ifc.wasm`);
   if (!wasmResponse.ok) throw new Error("Kunde inte läsa web-ifc.wasm. Kontrollera public/wasm/");
   const wasmBuffer = await wasmResponse.arrayBuffer();
   const wasmBase64 = arrayBufferToBase64(wasmBuffer);

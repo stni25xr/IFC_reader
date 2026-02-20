@@ -73,7 +73,8 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
   if (wasmBase64) {
     ifcLoader.ifcManager.setWasmPath(createWasmUrl(wasmBase64), true);
   } else {
-    ifcLoader.ifcManager.setWasmPath("/wasm/", true);
+    const wasmBasePath = `${import.meta.env.BASE_URL || "/"}wasm/`;
+    ifcLoader.ifcManager.setWasmPath(wasmBasePath, true);
   }
 
   const buffer = base64ToArrayBuffer(ifcBase64);

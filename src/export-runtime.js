@@ -27,11 +27,7 @@ const base64ToArrayBuffer = (base64) => {
   return bytes.buffer;
 };
 
-const createWasmUrl = (base64) => {
-  const buffer = base64ToArrayBuffer(base64);
-  const blob = new Blob([buffer], { type: "application/wasm" });
-  return URL.createObjectURL(blob);
-};
+const createWasmDataUrl = (base64) => `data:application/wasm;base64,${base64}`;
 
 const buildList = (listEl, data, onSelect) => {
   listEl.innerHTML = "";
@@ -188,15 +184,31 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
 
   const ifcLoader = new IFCLoader();
   if (wasmBase64) {
-    ifcLoader.ifcManager.setWasmPath(createWasmUrl(wasmBase64), true);
+    const wasmDataUrl = createWasmDataUrl(wasmBase64);
+    const api = ifcLoader.ifcManager.ifcAPI;
+    await api.Init((path) => (path.endsWith(".wasm") ? wasmDataUrl : path));
   } else {
-    const wasmBasePath = `${import.meta.env.BASE_URL || "/"}wasm/`;
-    ifcLoader.ifcManager.setWasmPath(wasmBasePath, true);
+    ifcLoader.ifcManager.setWasmPath("./wasm/");
   }
 
-  const buffer = base64ToArrayBuffer(ifcBase64);
-  const model = await ifcLoader.parse(buffer);
-  scene.add(model);
+  const showError = (message) => {
+    if (!container) return;
+    const el = document.createElement("div");
+    el.style.cssText =
+      "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;color:#111;background:#f8f9fb;font-size:14px;text-align:center;";
+    el.textContent = message;
+    container.appendChild(el);
+  };
+
+  let model = null;
+  try {
+    const buffer = base64ToArrayBuffer(ifcBase64);
+    model = await ifcLoader.parse(buffer);
+    scene.add(model);
+  } catch (err) {
+    showError("Kunde inte ladda web-ifc.wasm. Kontrollera att exporten är korrekt.");
+    throw err;
+  }
 
   const hoverMat = new THREE.MeshBasicMaterial({ color: 0x7bdff6, transparent: true, opacity: 0.35, depthTest: false });
   const selectMat = new THREE.MeshBasicMaterial({ color: 0xffd36e, transparent: true, opacity: 0.4, depthTest: false });

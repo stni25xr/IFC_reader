@@ -239,11 +239,11 @@
       }
       canvas { display: block; pointer-events: auto; }
       #ifc-progress-container {
-        position: fixed;
+        position: absolute;
         bottom: 0;
         left: 0;
         width: 100%;
-        height: 6px;
+        height: 10px;
         background: #e0e0e0;
         z-index: 9999;
         display: none;
@@ -256,18 +256,19 @@
         transition: width 0.2s ease;
       }
       #ifc-progress-text {
-        position: fixed;
-        bottom: 12px;
+        position: absolute;
         left: 50%;
-        transform: translateX(-50%);
-        font-size: 14px;
-        background: white;
-        padding: 6px 12px;
-        border-radius: 6px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 12px;
+        color: #111;
+        background: rgba(255,255,255,0.9);
+        padding: 2px 8px;
+        border-radius: 4px;
         display: none;
         z-index: 10000;
         pointer-events: none;
+        white-space: nowrap;
       }
       #toolbar {
         position: absolute;
@@ -330,12 +331,11 @@
         <div id="viewer-info">Ingen modell ännu.</div>
         <button id="reset-btn" class="btn secondary" type="button">Återställ vy</button>
       </div>
+      <div id="ifc-progress-container">
+        <div id="ifc-progress-bar"></div>
+        <span id="ifc-progress-text"></span>
+      </div>
     </main>
-
-    <div id="ifc-progress-container">
-      <div id="ifc-progress-bar"></div>
-    </div>
-    <span id="ifc-progress-text"></span>
 
     <script type="module" src="./src/main.js"></script>
   </body>

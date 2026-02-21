@@ -42,7 +42,8 @@ const dom = {
   clipXValue: document.getElementById("clip-x-value"),
   clipYValue: document.getElementById("clip-y-value"),
   clipZValue: document.getElementById("clip-z-value"),
-  viewCubeCanvas: document.getElementById("view-cube-canvas")
+  viewCubeCanvas: document.getElementById("view-cube-canvas"),
+  toggleClip: document.getElementById("toggle-clip")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -136,18 +137,18 @@ const initScene = () => {
   grid.material.transparent = true;
   scene.add(grid);
 
-  const createLabelMaterial = (label) => {
+  const createLabelMaterial = (label, shade = "#bcbcbc") => {
     const size = 256;
     const canvas = document.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = shade;
     ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = "#cfcfcf";
+    ctx.strokeStyle = "#9e9e9e";
     ctx.lineWidth = 6;
     ctx.strokeRect(0, 0, size, size);
-    ctx.fillStyle = "#333333";
+    ctx.fillStyle = "#ffffff";
     ctx.font = "bold 32px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -157,12 +158,12 @@ const initScene = () => {
   };
 
   cubeMaterials = [
-    createLabelMaterial("RIGHT"),
-    createLabelMaterial("LEFT"),
-    createLabelMaterial("TOP"),
-    createLabelMaterial("BOTTOM"),
-    createLabelMaterial("FRONT"),
-    createLabelMaterial("BACK")
+    createLabelMaterial("R", "#bdbdbd"),
+    createLabelMaterial("L", "#b3b3b3"),
+    createLabelMaterial("T", "#9e9e9e"),
+    createLabelMaterial("B", "#b3b3b3"),
+    createLabelMaterial("F", "#bdbdbd"),
+    createLabelMaterial("B", "#a8a8a8")
   ];
   const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
   cubeMesh = new THREE.Mesh(cubeGeo, cubeMaterials);
@@ -418,7 +419,12 @@ const clearSelection = () => {
 };
 
 const getExpressIdFromHit = (hit) => {
-  const fromManager = ifcLoader.ifcManager.getExpressId(hit.object.geometry, hit.faceIndex);
+  let fromManager = null;
+  try {
+    fromManager = ifcLoader.ifcManager.getExpressId(hit.object.geometry, hit.faceIndex);
+  } catch {
+    fromManager = null;
+  }
   if (fromManager) return fromManager;
   return hit.object.userData?.ifcId || hit.object.userData?.expressID || null;
 };
@@ -624,20 +630,23 @@ const updateClipPlanes = () => {
   if (!state.modelBox) return;
   const min = state.modelBox.min;
   const max = state.modelBox.max;
-  const xMinT = (Number(dom.clipXMin?.value || 0) || 0) / 100;
-  const xMaxT = (Number(dom.clipXMax?.value || 100) || 100) / 100;
-  const yMinT = (Number(dom.clipYMin?.value || 0) || 0) / 100;
-  const yMaxT = (Number(dom.clipYMax?.value || 100) || 100) / 100;
-  const zMinT = (Number(dom.clipZMin?.value || 0) || 0) / 100;
-  const zMaxT = (Number(dom.clipZMax?.value || 100) || 100) / 100;
+  let xMinT = (Number(dom.clipXMin?.value || 0) || 0) / 100;
+  let xMaxT = (Number(dom.clipXMax?.value || 100) || 100) / 100;
+  let yMinT = (Number(dom.clipYMin?.value || 0) || 0) / 100;
+  let yMaxT = (Number(dom.clipYMax?.value || 100) || 100) / 100;
+  let zMinT = (Number(dom.clipZMin?.value || 0) || 0) / 100;
+  let zMaxT = (Number(dom.clipZMax?.value || 100) || 100) / 100;
+
+  if (xMinT > xMaxT) [xMinT, xMaxT] = [xMaxT, xMinT];
+  if (yMinT > yMaxT) [yMinT, yMaxT] = [yMaxT, yMinT];
+  if (zMinT > zMaxT) [zMinT, zMaxT] = [zMaxT, zMinT];
 
   const xMin = min.x + (max.x - min.x) * xMinT;
   const xMax = min.x + (max.x - min.x) * xMaxT;
-  // Treat Z as height (up). Swap Y/Z for clipping controls.
-  const yMin = min.z + (max.z - min.z) * yMinT;
-  const yMax = min.z + (max.z - min.z) * yMaxT;
-  const zMin = min.y + (max.y - min.y) * zMinT;
-  const zMax = min.y + (max.y - min.y) * zMaxT;
+  const yMin = min.y + (max.y - min.y) * yMinT;
+  const yMax = min.y + (max.y - min.y) * yMaxT;
+  const zMin = min.z + (max.z - min.z) * zMinT;
+  const zMax = min.z + (max.z - min.z) * zMaxT;
 
   clipPlanes.xMin.constant = -xMin;
   clipPlanes.xMax.constant = xMax;
@@ -741,6 +750,11 @@ const setupClipUI = () => {
   dom.clipClose?.addEventListener("click", () => {
     const panel = document.getElementById("clip-panel");
     if (panel) panel.style.display = "none";
+  });
+  dom.toggleClip?.addEventListener("click", () => {
+    const panel = document.getElementById("clip-panel");
+    if (!panel) return;
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
   });
 };
 

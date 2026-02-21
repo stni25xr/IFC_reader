@@ -49,6 +49,12 @@ const main = async () => {
   await fs.writeFile(path.join(docsDir, ".nojekyll"), "");
 
   await run("git", ["add", "docs"]);
+  const { stdout: statusOut } = await run("git", ["status", "--porcelain", "docs"]);
+  if (!statusOut.trim()) {
+    console.log("No changes in docs; nothing new to publish.");
+    return;
+  }
+
   await run("git", ["commit", "-m", "Publish viewer export to GitHub Pages"]);
   await run("git", ["push"]);
 

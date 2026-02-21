@@ -277,7 +277,7 @@ const highlightList = (globalId) => {
 
 const clearSubset = (customID) => {
   if (!state.modelID) return;
-  ifcLoader.ifcManager.removeSubset(state.modelID, undefined, customID);
+  ifcLoader.ifcManager.removeSubset(state.modelID, scene, customID);
 };
 
 const setSubset = (expressID, material, customID) => {
@@ -287,7 +287,7 @@ const setSubset = (expressID, material, customID) => {
 
 const clearSelection = () => {
   lastSelected = null;
-  clearSubset("select");
+  clearSubset("selection");
   dom.props.textContent = "Klicka på ett element för att se metadata.";
   highlightList(null);
 };
@@ -417,11 +417,18 @@ const selectByGlobalId = async (globalId) => {
   const indexItem = state.ifcIndex[globalId];
   if (!indexItem) return;
   lastSelected = indexItem.expressID;
-  setSubset(indexItem.expressID, selectMat, "select");
+  setSubset(indexItem.expressID, selectMat, "selection");
   highlightList(globalId);
   dom.props.textContent = "Laddar parametrar...";
-  const data = await getFullDataForExpressId(indexItem.expressID, globalId);
-  renderProperties(data, globalId);
+  try {
+    console.log("[meta] load", { globalId, expressID: indexItem.expressID });
+    const data = await getFullDataForExpressId(indexItem.expressID, globalId);
+    console.log("[meta] ok", { globalId, expressID: indexItem.expressID });
+    renderProperties(data, globalId);
+  } catch (err) {
+    console.error("[meta] fail", err);
+    dom.props.textContent = "Kunde inte läsa metadata.";
+  }
 };
 
 const handlePick = (event, isClick) => {
@@ -456,7 +463,7 @@ const handlePick = (event, isClick) => {
   }
   if (isClick) {
     lastSelected = id;
-    setSubset(id, selectMat, "select");
+    setSubset(id, selectMat, "selection");
     const globalId = state.ifcIndexByExpressId[id];
     if (globalId) {
       selectByGlobalId(globalId);

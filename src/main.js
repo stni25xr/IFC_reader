@@ -35,6 +35,8 @@ const dom = {
   clipXMax: document.getElementById("clip-x-max"),
   clipYMin: document.getElementById("clip-y-min"),
   clipYMax: document.getElementById("clip-y-max"),
+  clipZMin: document.getElementById("clip-z-min"),
+  clipZMax: document.getElementById("clip-z-max"),
   clipUnclip: document.getElementById("clip-unclip"),
   clipClose: document.getElementById("clip-close")
 };
@@ -63,7 +65,9 @@ const clipPlanes = {
   xMin: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),
   xMax: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
   yMin: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
-  yMax: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)
+  yMax: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0),
+  zMin: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
+  zMax: new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
 };
 
 const ifcLoader = new IFCLoader();
@@ -171,7 +175,7 @@ const initScene = () => {
     // View cube
     if (cubeMesh) {
       cubeMesh.quaternion.copy(camera.quaternion).invert();
-      const size = 96 * window.devicePixelRatio;
+      const size = 120 * window.devicePixelRatio;
       const margin = 16 * window.devicePixelRatio;
       const w = renderer.domElement.width;
       const h = renderer.domElement.height;
@@ -685,18 +689,31 @@ const updateClipPlanes = () => {
   const xMaxT = (Number(dom.clipXMax?.value || 100) || 100) / 100;
   const yMinT = (Number(dom.clipYMin?.value || 0) || 0) / 100;
   const yMaxT = (Number(dom.clipYMax?.value || 100) || 100) / 100;
+  const zMinT = (Number(dom.clipZMin?.value || 0) || 0) / 100;
+  const zMaxT = (Number(dom.clipZMax?.value || 100) || 100) / 100;
 
   const xMin = min.x + (max.x - min.x) * xMinT;
   const xMax = min.x + (max.x - min.x) * xMaxT;
   const yMin = min.y + (max.y - min.y) * yMinT;
   const yMax = min.y + (max.y - min.y) * yMaxT;
+  const zMin = min.z + (max.z - min.z) * zMinT;
+  const zMax = min.z + (max.z - min.z) * zMaxT;
 
   clipPlanes.xMin.constant = -xMin;
   clipPlanes.xMax.constant = xMax;
   clipPlanes.yMin.constant = -yMin;
   clipPlanes.yMax.constant = yMax;
+  clipPlanes.zMin.constant = -zMin;
+  clipPlanes.zMax.constant = zMax;
 
-  renderer.clippingPlanes = [clipPlanes.xMin, clipPlanes.xMax, clipPlanes.yMin, clipPlanes.yMax];
+  renderer.clippingPlanes = [
+    clipPlanes.xMin,
+    clipPlanes.xMax,
+    clipPlanes.yMin,
+    clipPlanes.yMax,
+    clipPlanes.zMin,
+    clipPlanes.zMax
+  ];
 };
 
 const unclipAll = () => {
@@ -704,6 +721,8 @@ const unclipAll = () => {
   if (dom.clipXMax) dom.clipXMax.value = "100";
   if (dom.clipYMin) dom.clipYMin.value = "0";
   if (dom.clipYMax) dom.clipYMax.value = "100";
+  if (dom.clipZMin) dom.clipZMin.value = "0";
+  if (dom.clipZMax) dom.clipZMax.value = "100";
   renderer.clippingPlanes = [];
 };
 
@@ -767,6 +786,8 @@ const setupClipUI = () => {
   dom.clipXMax?.addEventListener("input", onInput);
   dom.clipYMin?.addEventListener("input", onInput);
   dom.clipYMax?.addEventListener("input", onInput);
+  dom.clipZMin?.addEventListener("input", onInput);
+  dom.clipZMax?.addEventListener("input", onInput);
   dom.clipUnclip?.addEventListener("click", () => {
     unclipAll();
   });

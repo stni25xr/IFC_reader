@@ -41,7 +41,7 @@
       #right-panel { display: none; }
       #viewer {
         position: relative;
-        background: linear-gradient(160deg, #0b0c1f 0%, #0d132e 100%);
+        background: #f2f2f2;
         pointer-events: auto;
       }
       header {
@@ -256,10 +256,6 @@
       </header>
       <div class="tabs" id="left-tabs">
         <button class="tab active" type="button">Navigation</button>
-        <button class="tab" type="button">Smart views</button>
-        <button class="tab" type="button">Conflicts</button>
-        <button class="tab" type="button">Lists</button>
-        <button class="tab" type="button">Issues</button>
       </div>
       <div id="dropzone" class="dropzone">
         <div>Drag & drop IFC här</div>
@@ -275,11 +271,10 @@
       <div id="tree-panel">
         <div class="hint">Ingen modell ännu.</div>
       </div>
-      <h2 style="font-size:14px; margin-top:18px;">Elementlista</h2>
-      <div id="element-list"></div>
       <h2 style="font-size:14px; margin-top:18px;">Egenskaper</h2>
       <div id="property-tabs" class="tabs"></div>
       <div id="property-view">Välj ett element för att se alla IFC-parametrar.</div>
+      <div id="element-list" style="display:none;"></div>
     </aside>
 
     <main id="viewer">

@@ -60,7 +60,7 @@
         font-size: 12px;
       }
       .dropzone {
-        border: 2px dashed #cfcfcf;
+        border: 1px solid #e0e0e0;
         border-radius: 12px;
         padding: 20px;
         text-align: center;
@@ -68,9 +68,25 @@
         color: #333333;
         margin-bottom: 16px;
         box-shadow: none;
+        position: relative;
+      }
+      .dropzone::before {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border: 2px dashed #cfcfcf;
+        border-radius: 12px;
+        pointer-events: none;
+      }
+      .dropzone > * {
+        position: relative;
+        z-index: 1;
       }
       .dropzone.dragover {
         background: #fafafa;
+        border-color: #4a90e2;
+      }
+      .dropzone.dragover::before {
         border-color: #4a90e2;
       }
       .dropzone .hint {
@@ -89,6 +105,7 @@
         background: #ffffff;
         color: #111111;
         border: 1px solid #d0d0d0;
+        border-radius: 12px;
       }
       #file-button.btn:hover {
         background: #f5f5f5;

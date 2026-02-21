@@ -66,6 +66,54 @@ const formatValue = (value) => {
   return String(value);
 };
 
+const getSpatialIndex = async (ifcLoader, modelID) => {
+  const tree = await ifcLoader.ifcManager.getSpatialStructure(modelID);
+  const index = {};
+  const walk = (node, path) => {
+    if (!node) return;
+    const nextPath = [...path, node];
+    if (node.expressID) {
+      index[node.expressID] = nextPath.map((n) => ({
+        expressID: n.expressID,
+        type: n.type,
+        name: n.name
+      }));
+    }
+    (node.children || []).forEach((child) => walk(child, nextPath));
+  };
+  walk(tree, []);
+  return { tree, index };
+};
+
+const getFullDataForExpressId = async (ifcLoader, modelID, expressID, spatialIndex) => {
+  const ifcAPI = ifcLoader.ifcManager.ifcAPI;
+  const safe = async (fn, fallback) => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  };
+  const rawLine = await safe(() => ifcAPI.GetLine(modelID, expressID, true), null);
+  const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(modelID, expressID, true), null);
+  const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(modelID, expressID, true), []);
+  const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(modelID, expressID, true), []);
+  const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(modelID, expressID, true), []);
+  const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(modelID, expressID, true), {});
+
+  return {
+    expressID,
+    ifcType: rawLine?.type || attrs?.type || rawLine?.constructor?.name,
+    attributes: attrs || {},
+    psets,
+    qtos,
+    materials,
+    type: typeProps,
+    relations: rawLine || {},
+    spatial: spatialIndex?.[expressID] || []
+  };
+};
+
 const buildPropertyTabs = (data, globalId) => {
   const attrs = data.attributes || {};
   const summaryRows = [
@@ -165,7 +213,7 @@ const renderProperties = (stateRef, data, globalId) => {
   stateRef.lastPayload = { data, globalId };
 };
 
-export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, wasmBase64 }) => {
+export const init = async ({ containerId, listId, propsId, bundle, bundleUrl, wasmBase64 }) => {
   const container = document.getElementById(containerId);
   const listEl = document.getElementById(listId);
   const propsEl = document.getElementById(propsId);
@@ -214,18 +262,49 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
     container.appendChild(el);
   };
 
+  const models = [];
   let model = null;
   try {
-    const buffer = base64ToArrayBuffer(ifcBase64);
-    model = await ifcLoader.parse(buffer);
-    scene.add(model);
+    const resolvedBundle =
+      bundle ||
+      (bundleUrl
+        ? await fetch(bundleUrl).then((res) => {
+            if (!res.ok) throw new Error("Kunde inte läsa bundle.json");
+            return res.json();
+          })
+        : { models: [] });
+    const items = resolvedBundle.models || [];
+    for (const item of items) {
+      let buffer;
+      if (item.ifcBase64) {
+        buffer = base64ToArrayBuffer(item.ifcBase64);
+      } else if (item.ifcPath) {
+        const resp = await fetch(item.ifcPath);
+        if (!resp.ok) throw new Error(`Kunde inte läsa ${item.ifcPath}`);
+        buffer = await resp.arrayBuffer();
+      }
+      const parsed = await ifcLoader.parse(buffer);
+      parsed.userData.modelID = parsed.modelID;
+      parsed.userData.bundleIndex = models.length;
+      parsed.visible = item.visible !== false;
+      const spatial = await getSpatialIndex(ifcLoader, parsed.modelID);
+      scene.add(parsed);
+      models.push({
+        id: parsed.modelID,
+        object: parsed,
+        filename: item.filename || `Model ${models.length + 1}`,
+        spatialIndex: spatial.index
+      });
+      if (!model) model = parsed;
+    }
   } catch (err) {
     showError("Kunde inte ladda web-ifc.wasm. Kontrollera att exporten är korrekt.");
     throw err;
   }
 
   const fitToModel = () => {
-    const box = new THREE.Box3().setFromObject(model);
+    const box = new THREE.Box3();
+    models.forEach((m) => box.expandByObject(m.object));
     const center = new THREE.Vector3();
     const size = new THREE.Vector3();
     box.getCenter(center);
@@ -356,15 +435,14 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
 
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
-  let modelID = model.modelID;
   let lastHovered = null;
   let lastSelected = null;
 
-  const clearSubset = (customID) => {
+  const clearSubset = (modelID, customID) => {
     ifcLoader.ifcManager.removeSubset(modelID, undefined, customID);
   };
 
-  const setSubset = (id, material, customID) => {
+  const setSubset = (modelID, id, material, customID) => {
     ifcLoader.ifcManager.createSubset({ modelID, ids: [id], material, scene, removePrevious: true, customID });
   };
 
@@ -373,42 +451,44 @@ export const init = async ({ containerId, listId, propsId, ifcBase64, ifcData, w
     mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObject(model, true);
+    const hits = raycaster.intersectObjects(models.map((m) => m.object), true);
     if (!hits.length) {
-      if (!isClick) clearSubset("hover");
+      if (!isClick && lastHovered?.modelID) clearSubset(lastHovered.modelID, "hover");
       return;
     }
     const found = hits[0];
     const id = ifcLoader.ifcManager.getExpressId(found.object.geometry, found.faceIndex);
     if (!id) return;
+    let current = found.object;
+    let hitModel = null;
+    while (current) {
+      if (current.userData?.modelID !== undefined) {
+        hitModel = models.find((m) => m.id === current.userData.modelID) || null;
+        break;
+      }
+      current = current.parent;
+    }
+    if (!hitModel) return;
     if (isClick) {
-      lastSelected = id;
-      setSubset(id, selectMat, "select");
-      const item = Object.entries(ifcData).find(([, value]) => value.expressID === id);
-      if (item) {
-        const [globalId, data] = item;
+      if (lastSelected?.modelID) clearSubset(lastSelected.modelID, "select");
+      lastSelected = { modelID: hitModel.id, expressID: id };
+      setSubset(hitModel.id, id, selectMat, "select");
+      getFullDataForExpressId(ifcLoader, hitModel.id, id, hitModel.spatialIndex).then((data) => {
+        const globalId = data.attributes?.GlobalId?.value || data.attributes?.GlobalId || `#${id}`;
         renderProperties(propState, data, globalId);
         highlightElement(listEl, globalId);
-      }
-    } else if (lastHovered !== id) {
-      lastHovered = id;
-      setSubset(id, hoverMat, "hover");
+      });
+    } else if (!lastHovered || lastHovered.expressID !== id || lastHovered.modelID !== hitModel.id) {
+      if (lastHovered?.modelID) clearSubset(lastHovered.modelID, "hover");
+      lastHovered = { modelID: hitModel.id, expressID: id };
+      setSubset(hitModel.id, id, hoverMat, "hover");
     }
   };
 
   renderer.domElement.addEventListener("mousemove", (event) => pick(event, false));
   renderer.domElement.addEventListener("click", (event) => pick(event, true));
 
-  const onSelectGlobal = (globalId) => {
-    const data = ifcData[globalId];
-    if (!data) return;
-    lastSelected = data.expressID;
-    setSubset(data.expressID, selectMat, "select");
-    renderProperties(propState, data, globalId);
-    highlightElement(listEl, globalId);
-  };
-
-  buildList(listEl, ifcData, onSelectGlobal);
+  if (listEl) listEl.innerHTML = "";
 
   if (cubeRenderer && viewCubeCanvas) {
     cubeRenderer.setPixelRatio(window.devicePixelRatio);

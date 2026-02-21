@@ -436,12 +436,20 @@
       <div id="dropzone" class="dropzone">
         <div>Drag & drop IFC här</div>
         <div class="hint">eller använd filväljaren</div>
-        <input id="file-input" type="file" accept=".ifc" style="display:none" />
+        <input id="file-input" type="file" accept=".ifc" multiple style="display:none" />
         <button id="file-button" class="btn" type="button">Välj IFC-fil</button>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
         <button id="export-btn" class="btn secondary" type="button" disabled>Exportera HTML</button>
         <div id="status">Ingen fil laddad.</div>
+      </div>
+      <h2 style="font-size:14px; margin-top:18px;">Modeller</h2>
+      <div id="model-list">
+        <div class="hint">Inga modeller ännu.</div>
+      </div>
+      <div style="margin-top:8px;">
+        <label class="hint" style="display:block; margin-bottom:6px;">Aktiv modell</label>
+        <select id="active-model" class="btn secondary" style="width:100%;"></select>
       </div>
       <h2 style="font-size:14px; margin-top:18px;">Navigation</h2>
       <div id="tree-panel">

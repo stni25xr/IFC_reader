@@ -1,18 +1,12 @@
 import * as THREE from "three";
+import JSZip from "jszip";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
 
 const state = {
-  ifcModel: null,
-  ifcArrayBuffer: null,
-  ifcIndex: {},
-  ifcIndexByExpressId: {},
-  ifcDataFull: {},
-  spatialIndex: {},
-  modelID: null,
-  modelBox: null,
-  modelCenter: null,
-  modelRadius: null
+  models: [],
+  activeModelId: null,
+  selected: null
 };
 
 const dom = {
@@ -28,6 +22,8 @@ const dom = {
   fileInput: document.getElementById("file-input"),
   fileButton: document.getElementById("file-button"),
   treePanel: document.getElementById("tree-panel"),
+  modelList: document.getElementById("model-list"),
+  activeModel: document.getElementById("active-model"),
   progressContainer: document.getElementById("ifc-progress-container"),
   progressBar: document.getElementById("ifc-progress-bar"),
   progressText: document.getElementById("ifc-progress-text"),
@@ -96,6 +92,9 @@ let lastHovered = null;
 let lastSelected = null;
 let activePropTab = "Summary";
 let lastPropPayload = null;
+
+const getModelById = (modelId) => state.models.find((m) => m.id === modelId);
+const getActiveModel = () => getModelById(state.activeModelId) || state.models[0] || null;
 
 const showProgress = () => {
   if (!dom.progressContainer || !dom.progressBar || !dom.progressText) return;
@@ -301,8 +300,8 @@ const extractIfcIndex = async (modelID, onProgress) => {
   return { indexByGuid, indexByExpressId };
 };
 
-const getFullDataForExpressId = async (expressID, globalId) => {
-  if (state.ifcDataFull[globalId]) return state.ifcDataFull[globalId];
+const getFullDataForExpressId = async (model, expressID, globalId) => {
+  if (model.ifcDataFull[globalId]) return model.ifcDataFull[globalId];
   const ifcAPI = ifcLoader.ifcManager.ifcAPI;
   const safe = async (fn, fallback) => {
     try {
@@ -312,12 +311,12 @@ const getFullDataForExpressId = async (expressID, globalId) => {
     }
   };
 
-  const rawLine = await safe(() => ifcAPI.GetLine(state.modelID, expressID, true), null);
-  const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(state.modelID, expressID, true), null);
-  const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(state.modelID, expressID, true), []);
-  const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(state.modelID, expressID, true), []);
-  const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(state.modelID, expressID, true), []);
-  const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(state.modelID, expressID, true), {});
+  const rawLine = await safe(() => ifcAPI.GetLine(model.id, expressID, true), null);
+  const attrs = await safe(() => ifcLoader.ifcManager.getItemProperties(model.id, expressID, true), null);
+  const psets = await safe(() => ifcLoader.ifcManager.getPropertySets(model.id, expressID, true), []);
+  const qtos = await safe(() => ifcLoader.ifcManager.getQuantities(model.id, expressID, true), []);
+  const materials = await safe(() => ifcLoader.ifcManager.getMaterialsProperties(model.id, expressID, true), []);
+  const typeProps = await safe(() => ifcLoader.ifcManager.getTypeProperties(model.id, expressID, true), {});
 
   const full = {
     expressID,
@@ -328,19 +327,19 @@ const getFullDataForExpressId = async (expressID, globalId) => {
     materials,
     type: typeProps,
     relations: rawLine || {},
-    spatial: state.spatialIndex[expressID] || []
+    spatial: model.spatialIndex[expressID] || []
   };
-  state.ifcDataFull[globalId] = full;
+  model.ifcDataFull[globalId] = full;
   return full;
 };
 
-const extractAllFullData = async (onProgress) => {
-  const entries = Object.entries(state.ifcIndex);
+const extractAllFullData = async (model, onProgress) => {
+  const entries = Object.entries(model.ifcIndex);
   const total = entries.length;
   const result = {};
   for (let i = 0; i < total; i += 1) {
     const [globalId, item] = entries[i];
-    const data = await getFullDataForExpressId(item.expressID, globalId);
+    const data = await getFullDataForExpressId(model, item.expressID, globalId);
     result[globalId] = data;
     if (i % 100 === 0) {
       if (onProgress) onProgress(i + 1, total);
@@ -351,6 +350,7 @@ const extractAllFullData = async (onProgress) => {
 };
 
 const buildList = (data) => {
+  if (!dom.list) return;
   dom.list.innerHTML = "";
   Object.entries(data).forEach(([globalId, item]) => {
     const row = document.createElement("div");
@@ -367,7 +367,8 @@ const renderTreeNode = (node) => {
   if (!node) return null;
   const hasChildren = (node.children || []).length > 0;
   const label = `${node.type || "Node"}${node.name ? `: ${node.name}` : ""}`;
-  const globalId = node.expressID ? state.ifcIndexByExpressId[node.expressID] : null;
+  const activeModel = getActiveModel();
+  const globalId = node.expressID && activeModel ? activeModel.ifcIndexByExpressId[node.expressID] : null;
 
   if (!hasChildren) {
     const leaf = document.createElement("div");
@@ -408,24 +409,25 @@ const renderTree = (tree) => {
 };
 
 const highlightList = (globalId) => {
+  if (!dom.list) return;
   dom.list.querySelectorAll(".element-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.globalId === globalId);
   });
 };
 
-const clearSubset = (customID) => {
-  if (!state.modelID) return;
-  ifcLoader.ifcManager.removeSubset(state.modelID, scene, customID);
+const clearSubset = (modelID, customID) => {
+  if (!modelID) return;
+  ifcLoader.ifcManager.removeSubset(modelID, scene, customID);
 };
 
-const setSubset = (expressID, material, customID) => {
-  if (!state.modelID) return;
-  ifcLoader.ifcManager.createSubset({ modelID: state.modelID, ids: [expressID], material, scene, removePrevious: true, customID });
+const setSubset = (modelID, expressID, material, customID) => {
+  if (!modelID) return;
+  ifcLoader.ifcManager.createSubset({ modelID, ids: [expressID], material, scene, removePrevious: true, customID });
 };
 
 const clearSelection = () => {
+  if (lastSelected?.modelID) clearSubset(lastSelected.modelID, "selection");
   lastSelected = null;
-  clearSubset("selection");
   dom.props.textContent = "Klicka på ett element för att se metadata.";
   highlightList(null);
 };
@@ -557,16 +559,19 @@ const renderProperties = (data, globalId) => {
 };
 
 const selectByGlobalId = async (globalId) => {
-  const indexItem = state.ifcIndex[globalId];
+  const model = getActiveModel();
+  if (!model) return;
+  const indexItem = model.ifcIndex[globalId];
   if (!indexItem) return;
-  lastSelected = indexItem.expressID;
-  setSubset(indexItem.expressID, selectMat, "selection");
+  if (lastSelected?.modelID) clearSubset(lastSelected.modelID, "selection");
+  lastSelected = { modelID: model.id, expressID: indexItem.expressID };
+  setSubset(model.id, indexItem.expressID, selectMat, "selection");
   highlightList(globalId);
   dom.props.textContent = "Laddar parametrar...";
   try {
-    console.log("[meta] load", { globalId, expressID: indexItem.expressID });
-    const data = await getFullDataForExpressId(indexItem.expressID, globalId);
-    console.log("[meta] ok", { globalId, expressID: indexItem.expressID });
+    console.log("[meta] load", { globalId, expressID: indexItem.expressID, modelID: model.id });
+    const data = await getFullDataForExpressId(model, indexItem.expressID, globalId);
+    console.log("[meta] ok", { globalId, expressID: indexItem.expressID, modelID: model.id });
     renderProperties(data, globalId);
   } catch (err) {
     console.error("[meta] fail", err);
@@ -574,8 +579,19 @@ const selectByGlobalId = async (globalId) => {
   }
 };
 
+const findModelFromObject = (object) => {
+  let current = object;
+  while (current) {
+    if (current.userData && current.userData.modelID !== undefined) {
+      return getModelById(current.userData.modelID);
+    }
+    current = current.parent;
+  }
+  return null;
+};
+
 const handlePick = (event, isClick) => {
-  if (!state.ifcModel) return;
+  if (!state.models.length) return;
   const bounds = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
@@ -585,38 +601,50 @@ const handlePick = (event, isClick) => {
   if (isClick) console.log("[pick] click", { x: event.clientX, y: event.clientY });
   console.log("[pick] hits:", hits.length);
   if (!hits.length) {
-    if (!isClick) clearSubset("hover");
+    if (!isClick && lastHovered?.modelID) clearSubset(lastHovered.modelID, "hover");
     if (isClick) clearSelection();
     return;
   }
   let id = null;
   let hit = null;
+  let hitModel = null;
   for (const candidate of hits) {
+    const candidateModel = findModelFromObject(candidate.object);
+    if (!candidateModel) continue;
     const candidateId = getExpressIdFromHit(candidate);
     if (candidateId) {
       id = candidateId;
       hit = candidate;
+      hitModel = candidateModel;
       break;
     }
   }
   console.log("[pick] expressID:", id);
-  if (!id || !hit) {
-    if (!isClick) clearSubset("hover");
+  if (!id || !hit || !hitModel) {
+    if (!isClick && lastHovered?.modelID) clearSubset(lastHovered.modelID, "hover");
     if (isClick) clearSelection();
     return;
   }
   if (isClick) {
-    lastSelected = id;
-    setSubset(id, selectMat, "selection");
-    const globalId = state.ifcIndexByExpressId[id];
-    if (globalId) {
-      selectByGlobalId(globalId);
-    } else {
+    if (lastSelected?.modelID) clearSubset(lastSelected.modelID, "selection");
+    lastSelected = { modelID: hitModel.id, expressID: id };
+    setSubset(hitModel.id, id, selectMat, "selection");
+    const globalId = hitModel.ifcIndexByExpressId[id];
+    if (!globalId) {
       dom.props.textContent = "Ingen GlobalId hittades för valt element.";
+      return;
     }
-  } else if (lastHovered !== id) {
-    lastHovered = id;
-    setSubset(id, hoverMat, "hover");
+    highlightList(globalId);
+    dom.props.textContent = "Laddar parametrar...";
+    getFullDataForExpressId(hitModel, id, globalId)
+      .then((data) => renderProperties(data, globalId))
+      .catch(() => {
+        dom.props.textContent = "Kunde inte läsa metadata.";
+      });
+  } else if (!lastHovered || lastHovered.expressID !== id || lastHovered.modelID !== hitModel.id) {
+    if (lastHovered?.modelID) clearSubset(lastHovered.modelID, "hover");
+    lastHovered = { modelID: hitModel.id, expressID: id };
+    setSubset(hitModel.id, id, hoverMat, "hover");
   }
 };
 
@@ -625,9 +653,10 @@ renderer.domElement.addEventListener("pointermove", (event) => handlePick(event,
 renderer.domElement.addEventListener("pointerdown", (event) => handlePick(event, true));
 
 const resetCamera = () => {
-  if (state.modelCenter && state.modelRadius) {
-    const center = state.modelCenter;
-    const distance = state.modelRadius * 2.2;
+  const model = getActiveModel();
+  if (model?.center && model?.radius) {
+    const center = model.center;
+    const distance = model.radius * 2.2;
     camera.position.set(center.x + distance, center.y + distance, center.z + distance);
     controls.target.copy(center);
   } else {
@@ -639,18 +668,20 @@ const resetCamera = () => {
 };
 
 const fitToView = () => {
-  if (!state.modelCenter || !state.modelRadius) return;
-  const center = state.modelCenter;
-  const distance = state.modelRadius * 2.2;
+  const model = getActiveModel();
+  if (!model?.center || !model?.radius) return;
+  const center = model.center;
+  const distance = model.radius * 2.2;
   camera.position.set(center.x + distance, center.y + distance, center.z + distance);
   controls.target.copy(center);
   controls.update();
 };
 
 const updateClipPlanes = () => {
-  if (!state.modelBox) return;
-  const min = state.modelBox.min;
-  const max = state.modelBox.max;
+  const model = getActiveModel();
+  if (!model?.box) return;
+  const min = model.box.min;
+  const max = model.box.max;
   let xMinT = (Number(dom.clipXMin?.value || 0) || 0) / 100;
   let xMaxT = (Number(dom.clipXMax?.value || 100) || 100) / 100;
   let yMinT = (Number(dom.clipYMin?.value || 0) || 0) / 100;
@@ -713,50 +744,57 @@ const unclipAll = () => {
 };
 
 const readIfcFile = async (file) => {
-  const buffer = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => resolve(reader.result);
-    reader.readAsArrayBuffer(file);
-  });
-  state.ifcArrayBuffer = buffer;
+  const buffer = await file.arrayBuffer();
+  const ifcBase64 = arrayBufferToBase64(buffer);
   dom.status.textContent = `Laddar ${file.name}...`;
   dom.viewerInfo.textContent = `Läser ${file.name}`;
   dom.exportBtn.disabled = true;
 
-  if (state.ifcModel) {
-    scene.remove(state.ifcModel);
-    clearSubset("hover");
-    clearSubset("select");
-  }
-
   const model = await ifcLoader.parse(buffer);
+  model.userData.modelID = model.modelID;
   scene.add(model);
-  state.ifcModel = model;
-  state.modelID = model.modelID;
+
   const box = new THREE.Box3().setFromObject(model);
   const center = new THREE.Vector3();
   const size = new THREE.Vector3();
   box.getCenter(center);
   box.getSize(size);
-  state.modelBox = box;
-  state.modelCenter = center;
-  state.modelRadius = Math.max(size.x, size.y, size.z) * 0.5 || 10;
-  resetCamera();
-  state.spatialTree = await ifcLoader.ifcManager.getSpatialStructure(state.modelID);
-  state.spatialIndex = await getSpatialIndex(state.modelID);
+
+  const spatialTree = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
+  const spatialIndex = await getSpatialIndex(model.modelID);
   showProgress();
-  const indexResult = await extractIfcIndex(state.modelID, (done, total) => {
+  const indexResult = await extractIfcIndex(model.modelID, (done, total) => {
     const percent = Math.round((done / total) * 100);
     dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
     updateProgress(percent, "Laddar element");
   });
-  state.ifcIndex = indexResult.indexByGuid;
-  state.ifcIndexByExpressId = indexResult.indexByExpressId;
-  state.ifcDataFull = {};
 
-  buildList(state.ifcIndex);
-  renderTree(state.spatialTree);
+  const modelEntry = {
+    id: model.modelID,
+    filename: file.name,
+    ifcBase64,
+    ifcBuffer: buffer,
+    object3D: model,
+    box,
+    center,
+    radius: Math.max(size.x, size.y, size.z) * 0.5 || 10,
+    spatialTree,
+    spatialIndex,
+    ifcIndex: indexResult.indexByGuid,
+    ifcIndexByExpressId: indexResult.indexByExpressId,
+    ifcDataFull: {},
+    visible: true
+  };
+  state.models.push(modelEntry);
+  if (!state.activeModelId) state.activeModelId = modelEntry.id;
+
+  renderModelList();
+  if (state.activeModelId === modelEntry.id) {
+    renderTree(modelEntry.spatialTree);
+    buildList(modelEntry.ifcIndex);
+    resetCamera();
+  }
+
   dom.status.textContent = "";
   dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
   dom.exportBtn.disabled = false;
@@ -764,6 +802,59 @@ const readIfcFile = async (file) => {
   if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
   completeProgress();
   unclipAll();
+};
+
+const loadIfcFiles = async (files) => {
+  const list = Array.from(files || []);
+  for (const file of list) {
+    await readIfcFile(file);
+  }
+};
+
+const renderModelList = () => {
+  if (!dom.modelList || !dom.activeModel) return;
+  dom.modelList.innerHTML = "";
+  dom.activeModel.innerHTML = "";
+  if (!state.models.length) {
+    dom.modelList.innerHTML = "<div class=\"hint\">Inga modeller ännu.</div>";
+    return;
+  }
+  state.models.forEach((model) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "8px";
+    row.style.marginBottom = "6px";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = model.visible !== false;
+    checkbox.addEventListener("change", () => {
+      model.visible = checkbox.checked;
+      if (model.object3D) model.object3D.visible = model.visible;
+      if (!model.visible && lastSelected?.modelID === model.id) clearSelection();
+    });
+    const label = document.createElement("div");
+    const count = Object.keys(model.ifcIndex || {}).length;
+    label.textContent = `${model.filename} (${count})`;
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    dom.modelList.appendChild(row);
+
+    const opt = document.createElement("option");
+    opt.value = model.id;
+    opt.textContent = model.filename;
+    if (state.activeModelId === model.id) opt.selected = true;
+    dom.activeModel.appendChild(opt);
+  });
+  dom.activeModel.onchange = () => {
+    state.activeModelId = Number(dom.activeModel.value);
+    const active = getActiveModel();
+    if (active) {
+      renderTree(active.spatialTree);
+      buildList(active.ifcIndex);
+      resetCamera();
+    }
+  };
 };
 
 const setupClipUI = () => {
@@ -792,8 +883,8 @@ const setupClipUI = () => {
 const setupDropzone = () => {
   dom.fileButton.addEventListener("click", () => dom.fileInput.click());
   dom.fileInput.addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    if (file) readIfcFile(file);
+    const files = event.target.files;
+    if (files?.length) loadIfcFiles(files);
   });
 
   dom.dropzone.addEventListener("dragover", (event) => {
@@ -806,30 +897,41 @@ const setupDropzone = () => {
   dom.dropzone.addEventListener("drop", (event) => {
     event.preventDefault();
     dom.dropzone.classList.remove("dragover");
-    const file = event.dataTransfer.files?.[0];
-    if (file) readIfcFile(file);
+    const files = event.dataTransfer.files;
+    if (files?.length) loadIfcFiles(files);
   });
 };
 
-const buildExportHtml = async () => {
-  if (!state.ifcArrayBuffer) return null;
+const buildExportZip = async () => {
+  if (!state.models.length) return null;
 
-  const ifcBase64 = arrayBufferToBase64(state.ifcArrayBuffer);
   const wasmResponse = await fetch(`${wasmBasePath}web-ifc.wasm`);
   if (!wasmResponse.ok) throw new Error("Kunde inte läsa web-ifc.wasm. Kontrollera public/wasm/");
   const wasmBuffer = await wasmResponse.arrayBuffer();
-  const wasmBase64 = arrayBufferToBase64(wasmBuffer);
 
   const bundleResponse = await fetch(`${import.meta.env.BASE_URL}export-bundle.js`);
   if (!bundleResponse.ok) throw new Error("Saknar export-bundle.js. Kör npm run build:export");
   const bundleCode = await bundleResponse.text();
 
-  const fullData = await extractAllFullData((done, total) => {
-    dom.status.textContent = `Samlar all IFC-data... ${done}/${total}`;
-  });
-  const dataJson = JSON.stringify(fullData);
+  const bundleModels = [];
+  const zip = new JSZip();
+  zip.folder("wasm").file("web-ifc.wasm", wasmBuffer);
 
-  return `<!doctype html>
+  const modelsFolder = zip.folder("models");
+  for (let i = 0; i < state.models.length; i += 1) {
+    const model = state.models[i];
+    const safeName = model.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const modelPath = `models/${i}_${safeName}`;
+    modelsFolder.file(`${i}_${safeName}`, model.ifcBuffer);
+    bundleModels.push({
+      filename: model.filename,
+      ifcPath: modelPath,
+      visible: model.visible !== false
+    });
+  }
+  zip.file("bundle.json", JSON.stringify({ models: bundleModels }));
+
+  const html = `<!doctype html>
 <html lang="sv">
 <head>
   <meta charset="UTF-8" />
@@ -947,9 +1049,7 @@ const buildExportHtml = async () => {
   </aside>
 
   <script>
-    window.IFC_DATA = ${dataJson};
-    window.IFC_BASE64 = "${ifcBase64}";
-    window.IFC_WASM_BASE64 = "${wasmBase64}";
+    window.IFC_BUNDLE_URL = "./bundle.json";
   </script>
   <script>
 ${bundleCode}
@@ -959,25 +1059,24 @@ ${bundleCode}
       containerId: "viewer",
       listId: "list",
       propsId: "props",
-      ifcBase64: window.IFC_BASE64,
-      ifcData: window.IFC_DATA,
-      wasmBase64: window.IFC_WASM_BASE64
+      bundleUrl: window.IFC_BUNDLE_URL
     });
   </script>
 </body>
 </html>`;
+  zip.file("viewer.html", html);
+  return zip.generateAsync({ type: "blob" });
 };
 
 const downloadHtml = async () => {
   try {
     dom.status.textContent = "Skapar export...";
-    const html = await buildExportHtml();
-    if (!html) return;
-    const blob = new Blob([html], { type: "text/html" });
+    const blob = await buildExportZip();
+    if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "ifc-offline-viewer.html";
+    a.download = "ifc-offline-viewer.zip";
     a.click();
     URL.revokeObjectURL(url);
     dom.status.textContent = "Export klar.";

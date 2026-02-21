@@ -38,7 +38,11 @@ const dom = {
   clipZMin: document.getElementById("clip-z-min"),
   clipZMax: document.getElementById("clip-z-max"),
   clipUnclip: document.getElementById("clip-unclip"),
-  clipClose: document.getElementById("clip-close")
+  clipClose: document.getElementById("clip-close"),
+  clipXValue: document.getElementById("clip-x-value"),
+  clipYValue: document.getElementById("clip-y-value"),
+  clipZValue: document.getElementById("clip-z-value"),
+  viewCubeCanvas: document.getElementById("view-cube-canvas")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -54,9 +58,10 @@ const cubeScene = new THREE.Scene();
 const cubeCamera = new THREE.OrthographicCamera(-1.2, 1.2, 1.2, -1.2, 0.1, 10);
 cubeCamera.position.set(0, 0, 3);
 cubeCamera.lookAt(0, 0, 0);
+const cubeRenderer = dom.viewCubeCanvas ? new THREE.WebGLRenderer({ canvas: dom.viewCubeCanvas, antialias: true, alpha: true }) : null;
 
 let cubeMesh = null;
-let cubeViewport = { x: 0, y: 0, size: 100 };
+let cubeViewport = { x: 0, y: 0, size: 120 };
 let cameraTween = null;
 let cubeMaterials = [];
 let cubeHoverFace = null;
@@ -112,6 +117,11 @@ const initScene = () => {
   renderer.setClearColor(0xf2f2f2, 1);
   renderer.localClippingEnabled = true;
   dom.viewer.appendChild(renderer.domElement);
+  if (cubeRenderer && dom.viewCubeCanvas) {
+    cubeRenderer.setPixelRatio(window.devicePixelRatio);
+    cubeRenderer.setSize(dom.viewCubeCanvas.clientWidth, dom.viewCubeCanvas.clientHeight, false);
+    cubeRenderer.setClearColor(0x000000, 0);
+  }
 
   camera.position.set(14, 10, 14);
   controls.enableDamping = true;
@@ -175,17 +185,9 @@ const initScene = () => {
     // View cube
     if (cubeMesh) {
       cubeMesh.quaternion.copy(camera.quaternion).invert();
-      const size = 120 * window.devicePixelRatio;
-      const margin = 16 * window.devicePixelRatio;
-      const w = renderer.domElement.width;
-      const h = renderer.domElement.height;
-      cubeViewport = { x: w - size - margin, y: margin, size };
-      renderer.clearDepth();
-      renderer.setScissorTest(true);
-      renderer.setScissor(cubeViewport.x, cubeViewport.y, cubeViewport.size, cubeViewport.size);
-      renderer.setViewport(cubeViewport.x, cubeViewport.y, cubeViewport.size, cubeViewport.size);
-      renderer.render(cubeScene, cubeCamera);
-      renderer.setScissorTest(false);
+      if (cubeRenderer && dom.viewCubeCanvas) {
+        cubeRenderer.render(cubeScene, cubeCamera);
+      }
     }
     requestAnimationFrame(animate);
   };
@@ -196,6 +198,9 @@ const resize = () => {
   camera.aspect = dom.viewer.clientWidth / dom.viewer.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(dom.viewer.clientWidth, dom.viewer.clientHeight);
+  if (cubeRenderer && dom.viewCubeCanvas) {
+    cubeRenderer.setSize(dom.viewCubeCanvas.clientWidth, dom.viewCubeCanvas.clientHeight, false);
+  }
 };
 
 window.addEventListener("resize", resize);
@@ -557,72 +562,6 @@ const handlePick = (event, isClick) => {
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
 
-  const canvasX = (event.clientX - bounds.left) * (renderer.domElement.width / bounds.width);
-  const canvasY = (bounds.height - (event.clientY - bounds.top)) * (renderer.domElement.height / bounds.height);
-  const inCube =
-    cubeMesh &&
-    canvasX >= cubeViewport.x &&
-    canvasX <= cubeViewport.x + cubeViewport.size &&
-    canvasY >= cubeViewport.y &&
-    canvasY <= cubeViewport.y + cubeViewport.size;
-
-  if (!isClick && cubeMesh) {
-    if (inCube) {
-      const localX = (canvasX - cubeViewport.x) / cubeViewport.size;
-      const localY = (canvasY - cubeViewport.y) / cubeViewport.size;
-      cubeMouse.x = localX * 2 - 1;
-      cubeMouse.y = localY * 2 - 1;
-      cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
-      const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
-      const faceIndex = cubeHits.length ? Math.floor(cubeHits[0].faceIndex / 2) : null;
-      if (faceIndex !== cubeHoverFace) {
-        cubeHoverFace = faceIndex;
-        cubeMaterials.forEach((mat, idx) => {
-          mat.color.set(idx === faceIndex ? "#e9f2ff" : "#ffffff");
-        });
-      }
-    } else if (cubeHoverFace !== null) {
-      cubeHoverFace = null;
-      cubeMaterials.forEach((mat) => mat.color.set("#ffffff"));
-    }
-  }
-
-  if (isClick && inCube) {
-    const localX = (canvasX - cubeViewport.x) / cubeViewport.size;
-    const localY = (canvasY - cubeViewport.y) / cubeViewport.size;
-    cubeMouse.x = localX * 2 - 1;
-    cubeMouse.y = localY * 2 - 1;
-    cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
-    const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
-    if (cubeHits.length) {
-      const faceIndex = cubeHits[0].faceIndex;
-      const faceMap = ["right", "left", "top", "bottom", "front", "back"];
-      const face = faceMap[Math.floor(faceIndex / 2)];
-      if (state.modelCenter && state.modelRadius) {
-        const center = state.modelCenter;
-        const distance = state.modelRadius * 2.2;
-        const dirMap = {
-          front: new THREE.Vector3(0, 0, 1),
-          back: new THREE.Vector3(0, 0, -1),
-          right: new THREE.Vector3(1, 0, 0),
-          left: new THREE.Vector3(-1, 0, 0),
-          top: new THREE.Vector3(0, 1, 0),
-          bottom: new THREE.Vector3(0, -1, 0)
-        };
-        const dir = dirMap[face] || new THREE.Vector3(1, 1, 1).normalize();
-        cameraTween = {
-          start: performance.now(),
-          duration: 450,
-          fromPos: camera.position.clone(),
-          toPos: center.clone().add(dir.multiplyScalar(distance)),
-          fromTarget: controls.target.clone(),
-          toTarget: center.clone()
-        };
-      }
-    }
-    return;
-  }
-
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(scene.children, true);
   if (isClick) console.log("[pick] click", { x: event.clientX, y: event.clientY });
@@ -714,6 +653,10 @@ const updateClipPlanes = () => {
     clipPlanes.zMin,
     clipPlanes.zMax
   ];
+
+  if (dom.clipXValue) dom.clipXValue.textContent = `${Math.round(xMin)} - ${Math.round(xMax)}`;
+  if (dom.clipYValue) dom.clipYValue.textContent = `${Math.round(yMin)} - ${Math.round(yMax)}`;
+  if (dom.clipZValue) dom.clipZValue.textContent = `${Math.round(zMin)} - ${Math.round(zMax)}`;
 };
 
 const unclipAll = () => {
@@ -724,6 +667,9 @@ const unclipAll = () => {
   if (dom.clipZMin) dom.clipZMin.value = "0";
   if (dom.clipZMax) dom.clipZMax.value = "100";
   renderer.clippingPlanes = [];
+  if (dom.clipXValue) dom.clipXValue.textContent = "0 - 100";
+  if (dom.clipYValue) dom.clipYValue.textContent = "0 - 100";
+  if (dom.clipZValue) dom.clipZValue.textContent = "0 - 100";
 };
 
 const readIfcFile = async (file) => {
@@ -916,6 +862,60 @@ const downloadHtml = async () => {
 initScene();
 setupDropzone();
 setupClipUI();
+if (cubeRenderer && dom.viewCubeCanvas) {
+  dom.viewCubeCanvas.addEventListener("pointermove", (event) => {
+    if (!cubeMesh) return;
+    const rect = dom.viewCubeCanvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    cubeMouse.set(x, y);
+    cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
+    const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
+    const faceIndex = cubeHits.length ? Math.floor(cubeHits[0].faceIndex / 2) : null;
+    if (faceIndex !== cubeHoverFace) {
+      cubeHoverFace = faceIndex;
+      cubeMaterials.forEach((mat, idx) => {
+        mat.color.set(idx === faceIndex ? "#e9f2ff" : "#ffffff");
+      });
+    }
+  });
+  dom.viewCubeCanvas.addEventListener("pointerleave", () => {
+    cubeHoverFace = null;
+    cubeMaterials.forEach((mat) => mat.color.set("#ffffff"));
+  });
+  dom.viewCubeCanvas.addEventListener("pointerdown", (event) => {
+    if (!cubeMesh || !state.modelCenter || !state.modelRadius) return;
+    const rect = dom.viewCubeCanvas.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    cubeMouse.set(x, y);
+    cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
+    const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
+    if (!cubeHits.length) return;
+    const faceIndex = cubeHits[0].faceIndex;
+    const faceMap = ["right", "left", "top", "bottom", "front", "back"];
+    const face = faceMap[Math.floor(faceIndex / 2)];
+    const center = state.modelCenter;
+    const distance = state.modelRadius * 2.2;
+    const dirMap = {
+      front: new THREE.Vector3(0, 0, 1),
+      back: new THREE.Vector3(0, 0, -1),
+      right: new THREE.Vector3(1, 0, 0),
+      left: new THREE.Vector3(-1, 0, 0),
+      top: new THREE.Vector3(0, 1, 0),
+      bottom: new THREE.Vector3(0, -1, 0)
+    };
+    const dir = dirMap[face] || new THREE.Vector3(1, 1, 1).normalize();
+    cameraTween = {
+      start: performance.now(),
+      duration: 450,
+      fromPos: camera.position.clone(),
+      toPos: center.clone().add(dir.multiplyScalar(distance)),
+      fromTarget: controls.target.clone(),
+      toTarget: center.clone()
+    };
+  });
+}
 
 if (dom.resetBtn) dom.resetBtn.addEventListener("click", resetCamera);
 if (dom.exportBtn) dom.exportBtn.addEventListener("click", downloadHtml);

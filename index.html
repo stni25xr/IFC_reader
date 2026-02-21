@@ -51,14 +51,33 @@
         padding: 12px;
         margin-top: 12px;
       }
+      #clip-panel .clip-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      #clip-panel .clip-hint {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 8px;
+      }
       .clip-row {
         display: grid;
-        grid-template-columns: 48px 1fr;
+        grid-template-columns: 64px 1fr;
         gap: 8px;
         align-items: center;
         font-size: 12px;
         color: #333;
         margin-bottom: 8px;
+      }
+      .clip-value {
+        display: inline-block;
+        font-size: 11px;
+        color: #555;
+        background: #f5f5f5;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-left: 6px;
       }
       .clip-row input[type="range"] {
         width: 100%;
@@ -74,6 +93,15 @@
       }
       #clip-actions .btn.secondary:hover {
         background: #ededed;
+      }
+      #view-cube-canvas {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        width: 120px;
+        height: 120px;
+        pointer-events: auto;
+        z-index: 10;
       }
       header {
         display: flex;
@@ -356,13 +384,14 @@
       <div id="property-view">Välj ett element för att se alla IFC-parametrar.</div>
       <div id="element-list" style="display:none;"></div>
       <div id="clip-panel">
-        <div style="font-weight:600; margin-bottom:8px;">Clip</div>
-        <div class="clip-row"><div>X-min</div><input id="clip-x-min" type="range" min="0" max="100" value="0"></div>
-        <div class="clip-row"><div>X-max</div><input id="clip-x-max" type="range" min="0" max="100" value="100"></div>
-        <div class="clip-row"><div>Y-min</div><input id="clip-y-min" type="range" min="0" max="100" value="0"></div>
-        <div class="clip-row"><div>Y-max</div><input id="clip-y-max" type="range" min="0" max="100" value="100"></div>
-        <div class="clip-row"><div>Z-min</div><input id="clip-z-min" type="range" min="0" max="100" value="0"></div>
-        <div class="clip-row"><div>Z-max</div><input id="clip-z-max" type="range" min="0" max="100" value="100"></div>
+        <div class="clip-title">Clip</div>
+        <div class="clip-hint">Slide to clip the model in specific direction</div>
+        <div class="clip-row"><div>Length X <span id="clip-x-value" class="clip-value">0 - 100</span></div><input id="clip-x-min" type="range" min="0" max="100" value="0"></div>
+        <div class="clip-row"><div></div><input id="clip-x-max" type="range" min="0" max="100" value="100"></div>
+        <div class="clip-row"><div>Length Y <span id="clip-y-value" class="clip-value">0 - 100</span></div><input id="clip-y-min" type="range" min="0" max="100" value="0"></div>
+        <div class="clip-row"><div></div><input id="clip-y-max" type="range" min="0" max="100" value="100"></div>
+        <div class="clip-row"><div>Length Z <span id="clip-z-value" class="clip-value">0 - 100</span></div><input id="clip-z-min" type="range" min="0" max="100" value="0"></div>
+        <div class="clip-row"><div></div><input id="clip-z-max" type="range" min="0" max="100" value="100"></div>
         <div id="clip-actions">
           <button id="clip-unclip" class="btn secondary" type="button">Unclip</button>
           <button id="clip-close" class="btn secondary" type="button">Close</button>
@@ -379,6 +408,7 @@
         <div id="ifc-progress-bar"></div>
         <span id="ifc-progress-text"></span>
       </div>
+      <canvas id="view-cube-canvas" width="120" height="120"></canvas>
     </main>
 
     <script type="module" src="./src/main.js"></script>

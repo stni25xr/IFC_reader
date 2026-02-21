@@ -35,12 +35,13 @@ Detta repo är förberett för GitHub Pages på:
 2. Modellen renderas i 3D-viewern.
 3. Klicka på objekt i modellen eller i listan för att se **alla** IFC-parametrar.
 
-## Exportera HTML (offline)
+## Exportera HTML (offline, ZIP-bundle)
 
-Exporten skapar en enda `.html`-fil som fungerar offline och innehåller:
-- 3D-viewer
-- Samtliga IFC-element
-- Alla parametrar per element (kopplade till GlobalId)
+Exporten skapar en **ZIP-bundle** som fungerar offline och innehåller:
+- `viewer.html`
+- `bundle.json`
+- `models/*.ifc`
+- `wasm/web-ifc.wasm`
 
 ### Förbered exportbundlen
 
@@ -54,9 +55,24 @@ Detta skapar `public/export-bundle.js`.
 
 ### Export
 
-1. Ladda en IFC i appen.
+1. Ladda en eller flera IFC i appen.
 2. Klicka **Exportera HTML**.
-3. En fil `ifc-offline-viewer.html` laddas ner och fungerar helt offline.
+3. En fil `ifc-offline-viewer.zip` laddas ner.
+
+### Öppna exporten
+
+1. Packa upp ZIP-filen.
+2. Starta en lokal server i den uppackade mappen:
+
+```bash
+npx serve
+```
+
+3. Öppna:
+
+```
+http://localhost:3000/viewer.html
+```
 
 ## Viktigt om wasm
 
@@ -66,24 +82,7 @@ Exporten kräver `public/wasm/web-ifc.wasm`. Om den saknas:
 npm run postinstall
 ```
 
-## Datamodell i export
+## Metadata i export
 
-Exportfilen innehåller:
-
-```js
-window.IFC_DATA = {
-  GlobalId: {
-    expressID: 123,
-    ifcType: "IfcWall",
-    attributes: {...},
-    psets: {...},
-    qtos: {...},
-    materials: {...},
-    type: {...},
-    relations: {...},
-    spatial: [...]
-  }
-}
-```
-
-All metadata bevaras utan filtrering.
+Export-viewern hämtar metadata **on-demand** när du klickar på ett element.
+Detta gör att även stora IFC-filer fungerar utan minnesfel.

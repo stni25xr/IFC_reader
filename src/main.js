@@ -906,6 +906,9 @@ const setupDropzone = () => {
 const buildExportZip = async () => {
   if (!state.models.length) return null;
 
+  const activeModel = getActiveModel();
+  if (!activeModel) return null;
+
   const wasmResponse = await fetch(`${wasmBasePath}web-ifc.wasm`);
   if (!wasmResponse.ok) throw new Error("Kunde inte läsa web-ifc.wasm. Kontrollera public/wasm/");
   const wasmBuffer = await wasmResponse.arrayBuffer();
@@ -914,23 +917,25 @@ const buildExportZip = async () => {
   if (!bundleResponse.ok) throw new Error("Saknar export-bundle.js. Kör npm run build:export");
   const bundleCode = await bundleResponse.text();
 
-  const bundleModels = [];
   const zip = new JSZip();
   zip.folder("wasm").file("web-ifc.wasm", wasmBuffer);
 
   const modelsFolder = zip.folder("models");
-  for (let i = 0; i < state.models.length; i += 1) {
-    const model = state.models[i];
-    const safeName = model.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const modelPath = `models/${i}_${safeName}`;
-    modelsFolder.file(`${i}_${safeName}`, model.ifcBuffer);
-    bundleModels.push({
-      filename: model.filename,
-      ifcPath: modelPath,
-      visible: model.visible !== false
-    });
-  }
-  zip.file("bundle.json", JSON.stringify({ models: bundleModels }));
+  const safeName = activeModel.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const modelPath = `models/0_${safeName}`;
+  modelsFolder.file(`0_${safeName}`, activeModel.ifcBuffer);
+  zip.file(
+    "bundle.json",
+    JSON.stringify({
+      models: [
+        {
+          filename: activeModel.filename,
+          ifcPath: modelPath,
+          visible: true
+        }
+      ]
+    })
+  );
 
   const html = `<!doctype html>
 <html lang="sv">
@@ -1071,7 +1076,11 @@ ${bundleCode}
 
 const downloadHtml = async () => {
   try {
-    dom.status.textContent = "Skapar export...";
+    if (state.models.length > 1) {
+      dom.status.textContent = "Export stödjer en modell. Använder aktiv modell.";
+    } else {
+      dom.status.textContent = "Skapar export...";
+    }
     const blob = await buildExportZip();
     if (!blob) return;
     const url = URL.createObjectURL(blob);

@@ -443,6 +443,10 @@
         <button id="export-btn" class="btn secondary" type="button" disabled>Exportera HTML</button>
         <div id="status">Ingen fil laddad.</div>
       </div>
+      <div style="margin-top:8px;">
+        <button id="publish-btn" class="btn secondary" type="button">Publicera online</button>
+        <div class="hint" style="margin-top:6px;">Skapar ZIP och publicerar till GitHub Pages.</div>
+      </div>
       <h2 style="font-size:14px; margin-top:18px;">Modeller</h2>
       <div id="model-list">
         <div class="hint">Inga modeller ännu.</div>
@@ -527,6 +531,19 @@
       <label><input id="toggle-edges" type="checkbox" /> Show edges</label>
     </div>
 
+    <div id="publish-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:9999; align-items:center; justify-content:center;">
+      <div style="background:#fff; color:#111; padding:16px; border-radius:12px; width:min(520px, 90vw); box-shadow:0 10px 30px rgba(0,0,0,0.25);">
+        <div style="font-weight:600; margin-bottom:8px;">Publicera till GitHub Pages</div>
+        <div class="hint" style="color:#333; margin-bottom:8px;">
+          Kör detta kommando i terminalen (byt ut sökvägen till din ZIP om den ligger i Downloads).
+        </div>
+        <pre id="publish-command" style="background:#f5f5f5; padding:10px; border-radius:8px; font-size:12px; overflow:auto;">npm run publish:pages -- /Users/nicolas_stpierre/Downloads/ifc-offline-viewer.zip</pre>
+        <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end;">
+          <button id="publish-copy" class="btn secondary" type="button">Kopiera</button>
+          <button id="publish-close" class="btn secondary" type="button">Stäng</button>
+        </div>
+      </div>
+    </div>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

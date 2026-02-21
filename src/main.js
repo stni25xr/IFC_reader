@@ -18,6 +18,7 @@ const dom = {
   viewerInfo: document.getElementById("viewer-info"),
   resetBtn: document.getElementById("reset-btn"),
   exportBtn: document.getElementById("export-btn"),
+  publishBtn: document.getElementById("publish-btn"),
   dropzone: document.getElementById("dropzone"),
   fileInput: document.getElementById("file-input"),
   fileButton: document.getElementById("file-button"),
@@ -1193,3 +1194,25 @@ if (cubeRenderer && dom.viewCubeCanvas) {
 
 if (dom.resetBtn) dom.resetBtn.addEventListener("click", resetCamera);
 if (dom.exportBtn) dom.exportBtn.addEventListener("click", downloadHtml);
+if (dom.publishBtn) {
+  const modal = document.getElementById("publish-modal");
+  const cmd = document.getElementById("publish-command");
+  const closeBtn = document.getElementById("publish-close");
+  const copyBtn = document.getElementById("publish-copy");
+  dom.publishBtn.addEventListener("click", () => {
+    if (modal) modal.style.display = "flex";
+  });
+  closeBtn?.addEventListener("click", () => {
+    if (modal) modal.style.display = "none";
+  });
+  copyBtn?.addEventListener("click", async () => {
+    if (!cmd?.textContent) return;
+    try {
+      await navigator.clipboard.writeText(cmd.textContent);
+      copyBtn.textContent = "Kopierad!";
+      setTimeout(() => (copyBtn.textContent = "Kopiera"), 1200);
+    } catch {
+      // ignore
+    }
+  });
+}

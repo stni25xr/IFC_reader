@@ -43,7 +43,15 @@ const dom = {
   clipYValue: document.getElementById("clip-y-value"),
   clipZValue: document.getElementById("clip-z-value"),
   viewCubeCanvas: document.getElementById("view-cube-canvas"),
-  toggleClip: document.getElementById("toggle-clip")
+  toolWalk: document.getElementById("tool-walk"),
+  toolMeasure: document.getElementById("tool-measure"),
+  toolClip: document.getElementById("tool-clip"),
+  toolFit: document.getElementById("tool-fit"),
+  toolReset: document.getElementById("tool-reset"),
+  toolSettings: document.getElementById("tool-settings"),
+  settingsPanel: document.getElementById("aps-settings"),
+  toggleGrid: document.getElementById("toggle-grid"),
+  toggleEdges: document.getElementById("toggle-edges")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -62,10 +70,11 @@ cubeCamera.lookAt(0, 0, 0);
 const cubeRenderer = dom.viewCubeCanvas ? new THREE.WebGLRenderer({ canvas: dom.viewCubeCanvas, antialias: true, alpha: true }) : null;
 
 let cubeMesh = null;
-let cubeViewport = { x: 0, y: 0, size: 120 };
+let cubeViewport = { x: 0, y: 0, size: 92 };
 let cameraTween = null;
 let cubeMaterials = [];
 let cubeHoverFace = null;
+let gridHelper = null;
 
 const clipPlanes = {
   xMin: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),
@@ -132,10 +141,10 @@ const initScene = () => {
   dirLight.position.set(10, 20, 15);
   scene.add(dirLight);
 
-  const grid = new THREE.GridHelper(60, 60, 0xcccccc, 0xdddddd);
-  grid.material.opacity = 0.2;
-  grid.material.transparent = true;
-  scene.add(grid);
+  gridHelper = new THREE.GridHelper(60, 60, 0xcccccc, 0xdddddd);
+  gridHelper.material.opacity = 0.2;
+  gridHelper.material.transparent = true;
+  scene.add(gridHelper);
 
   const createLabelMaterial = (label, shade = "#bcbcbc") => {
     const size = 256;
@@ -158,12 +167,12 @@ const initScene = () => {
   };
 
   cubeMaterials = [
-    createLabelMaterial("R", "#bdbdbd"),
-    createLabelMaterial("L", "#b3b3b3"),
-    createLabelMaterial("T", "#9e9e9e"),
-    createLabelMaterial("B", "#b3b3b3"),
-    createLabelMaterial("F", "#bdbdbd"),
-    createLabelMaterial("B", "#a8a8a8")
+    createLabelMaterial("RIGHT", "#bdbdbd"),
+    createLabelMaterial("LEFT", "#b3b3b3"),
+    createLabelMaterial("TOP", "#9e9e9e"),
+    createLabelMaterial("BOTTOM", "#b3b3b3"),
+    createLabelMaterial("FRONT", "#bdbdbd"),
+    createLabelMaterial("BACK", "#a8a8a8")
   ];
   const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
   cubeMesh = new THREE.Mesh(cubeGeo, cubeMaterials);
@@ -626,6 +635,15 @@ const resetCamera = () => {
   clearSelection();
 };
 
+const fitToView = () => {
+  if (!state.modelCenter || !state.modelRadius) return;
+  const center = state.modelCenter;
+  const distance = state.modelRadius * 2.2;
+  camera.position.set(center.x + distance, center.y + distance, center.z + distance);
+  controls.target.copy(center);
+  controls.update();
+};
+
 const updateClipPlanes = () => {
   if (!state.modelBox) return;
   const min = state.modelBox.min;
@@ -643,6 +661,7 @@ const updateClipPlanes = () => {
 
   const xMin = min.x + (max.x - min.x) * xMinT;
   const xMax = min.x + (max.x - min.x) * xMaxT;
+  // Treat Z as height (up). Use Z for Length Z sliders, Y for Length Y.
   const yMin = min.y + (max.y - min.y) * yMinT;
   const yMax = min.y + (max.y - min.y) * yMaxT;
   const zMin = min.z + (max.z - min.z) * zMinT;
@@ -751,10 +770,11 @@ const setupClipUI = () => {
     const panel = document.getElementById("clip-panel");
     if (panel) panel.style.display = "none";
   });
-  dom.toggleClip?.addEventListener("click", () => {
+  dom.toolClip?.addEventListener("click", () => {
     const panel = document.getElementById("clip-panel");
     if (!panel) return;
     panel.style.display = panel.style.display === "none" ? "block" : "none";
+    dom.toolClip.classList.toggle("active");
   });
 };
 
@@ -877,6 +897,36 @@ const downloadHtml = async () => {
 initScene();
 setupDropzone();
 setupClipUI();
+if (dom.toolWalk) {
+  dom.toolWalk.addEventListener("click", () => {
+    dom.toolWalk.classList.toggle("active");
+    console.log("[tool] walk toggle");
+  });
+}
+if (dom.toolMeasure) {
+  dom.toolMeasure.addEventListener("click", () => {
+    dom.toolMeasure.classList.toggle("active");
+    console.log("[tool] measure toggle");
+  });
+}
+if (dom.toolFit) dom.toolFit.addEventListener("click", fitToView);
+if (dom.toolReset) dom.toolReset.addEventListener("click", resetCamera);
+if (dom.toolSettings) {
+  dom.toolSettings.addEventListener("click", () => {
+    if (!dom.settingsPanel) return;
+    dom.settingsPanel.style.display = dom.settingsPanel.style.display === "none" ? "block" : "none";
+  });
+}
+if (dom.toggleGrid) {
+  dom.toggleGrid.addEventListener("change", (event) => {
+    if (gridHelper) gridHelper.visible = event.target.checked;
+  });
+}
+if (dom.toggleEdges) {
+  dom.toggleEdges.addEventListener("change", () => {
+    console.log("[tool] edges toggle (placeholder)");
+  });
+}
 if (cubeRenderer && dom.viewCubeCanvas) {
   dom.viewCubeCanvas.addEventListener("pointermove", (event) => {
     if (!cubeMesh) return;
@@ -889,9 +939,9 @@ if (cubeRenderer && dom.viewCubeCanvas) {
     const faceIndex = cubeHits.length ? Math.floor(cubeHits[0].faceIndex / 2) : null;
     if (faceIndex !== cubeHoverFace) {
       cubeHoverFace = faceIndex;
-      cubeMaterials.forEach((mat, idx) => {
-        mat.color.set(idx === faceIndex ? "#e9f2ff" : "#ffffff");
-      });
+    cubeMaterials.forEach((mat, idx) => {
+      mat.color.set(idx === faceIndex ? "#a9c7ff" : "#ffffff");
+    });
     }
   });
   dom.viewCubeCanvas.addEventListener("pointerleave", () => {

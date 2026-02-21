@@ -24,7 +24,10 @@ const dom = {
   dropzone: document.getElementById("dropzone"),
   fileInput: document.getElementById("file-input"),
   fileButton: document.getElementById("file-button"),
-  treePanel: document.getElementById("tree-panel")
+  treePanel: document.getElementById("tree-panel"),
+  progressContainer: document.getElementById("ifc-progress-container"),
+  progressBar: document.getElementById("ifc-progress-bar"),
+  progressText: document.getElementById("ifc-progress-text")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -45,6 +48,30 @@ let lastHovered = null;
 let lastSelected = null;
 let activePropTab = "Summary";
 let lastPropPayload = null;
+
+const showProgress = () => {
+  if (!dom.progressContainer || !dom.progressBar || !dom.progressText) return;
+  dom.progressContainer.style.display = "block";
+  dom.progressText.style.display = "block";
+  updateProgress(0);
+};
+
+const updateProgress = (percent) => {
+  if (!dom.progressContainer || !dom.progressBar || !dom.progressText) return;
+  const safe = Math.max(0, Math.min(100, percent));
+  dom.progressBar.style.width = `${safe}%`;
+  dom.progressText.textContent = `Laddar modell… ${safe}%`;
+};
+
+const completeProgress = () => {
+  if (!dom.progressContainer || !dom.progressBar || !dom.progressText) return;
+  dom.progressBar.style.width = "100%";
+  dom.progressText.textContent = "Uppladdning klar";
+  setTimeout(() => {
+    dom.progressContainer.style.display = "none";
+    dom.progressText.style.display = "none";
+  }, 1500);
+};
 
 const initScene = () => {
   renderer.setSize(dom.viewer.clientWidth, dom.viewer.clientHeight);
@@ -487,7 +514,20 @@ const resetCamera = () => {
 };
 
 const readIfcFile = async (file) => {
-  const buffer = await file.arrayBuffer();
+  showProgress();
+  const buffer = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadstart = () => updateProgress(0);
+    reader.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        updateProgress(percent);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result);
+    reader.readAsArrayBuffer(file);
+  });
   state.ifcArrayBuffer = buffer;
   dom.status.textContent = `Laddar ${file.name}...`;
   dom.viewerInfo.textContent = `Läser ${file.name}`;
@@ -520,6 +560,7 @@ const readIfcFile = async (file) => {
   dom.exportBtn.disabled = false;
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
   if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
+  completeProgress();
 };
 
 const setupDropzone = () => {

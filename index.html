@@ -238,6 +238,37 @@
         color: var(--muted);
       }
       canvas { display: block; pointer-events: auto; }
+      #ifc-progress-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 6px;
+        background: #e0e0e0;
+        z-index: 9999;
+        display: none;
+        pointer-events: none;
+      }
+      #ifc-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: #4a90e2;
+        transition: width 0.2s ease;
+      }
+      #ifc-progress-text {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 14px;
+        background: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        display: none;
+        z-index: 10000;
+        pointer-events: none;
+      }
       #toolbar {
         position: absolute;
         top: 16px;
@@ -300,6 +331,11 @@
         <button id="reset-btn" class="btn secondary" type="button">Återställ vy</button>
       </div>
     </main>
+
+    <div id="ifc-progress-container">
+      <div id="ifc-progress-bar"></div>
+    </div>
+    <span id="ifc-progress-text"></span>
 
     <script type="module" src="./src/main.js"></script>
   </body>

@@ -9,7 +9,10 @@ const state = {
   ifcIndexByExpressId: {},
   ifcDataFull: {},
   spatialIndex: {},
-  modelID: null
+  modelID: null,
+  modelBox: null,
+  modelCenter: null,
+  modelRadius: null
 };
 
 const dom = {
@@ -27,7 +30,8 @@ const dom = {
   treePanel: document.getElementById("tree-panel"),
   progressContainer: document.getElementById("ifc-progress-container"),
   progressBar: document.getElementById("ifc-progress-bar"),
-  progressText: document.getElementById("ifc-progress-text")
+  progressText: document.getElementById("ifc-progress-text"),
+  viewCube: document.getElementById("view-cube")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -508,9 +512,17 @@ renderer.domElement.addEventListener("pointermove", (event) => handlePick(event,
 renderer.domElement.addEventListener("pointerdown", (event) => handlePick(event, true));
 
 const resetCamera = () => {
-  camera.position.set(14, 10, 14);
-  controls.target.set(0, 0, 0);
+  if (state.modelCenter && state.modelRadius) {
+    const center = state.modelCenter;
+    const distance = state.modelRadius * 2.2;
+    camera.position.set(center.x + distance, center.y + distance, center.z + distance);
+    controls.target.copy(center);
+  } else {
+    camera.position.set(14, 10, 14);
+    controls.target.set(0, 0, 0);
+  }
   controls.update();
+  clearSelection();
 };
 
 const readIfcFile = async (file) => {
@@ -535,6 +547,15 @@ const readIfcFile = async (file) => {
   scene.add(model);
   state.ifcModel = model;
   state.modelID = model.modelID;
+  const box = new THREE.Box3().setFromObject(model);
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+  state.modelBox = box;
+  state.modelCenter = center;
+  state.modelRadius = Math.max(size.x, size.y, size.z) * 0.5 || 10;
+  resetCamera();
   state.spatialTree = await ifcLoader.ifcManager.getSpatialStructure(state.modelID);
   state.spatialIndex = await getSpatialIndex(state.modelID);
   showProgress();
@@ -549,8 +570,7 @@ const readIfcFile = async (file) => {
 
   buildList(state.ifcIndex);
   renderTree(state.spatialTree);
-  const total = Object.keys(state.ifcIndex).length;
-  dom.status.textContent = `${total} element med GlobalId laddade.`;
+  dom.status.textContent = "";
   dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
   dom.exportBtn.disabled = false;
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
@@ -676,6 +696,29 @@ const downloadHtml = async () => {
 
 initScene();
 setupDropzone();
+if (dom.viewCube) {
+  dom.viewCube.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!target || !target.dataset?.view) return;
+    if (!state.modelCenter || !state.modelRadius) return;
+    const center = state.modelCenter;
+    const distance = state.modelRadius * 2.2;
+    const view = target.dataset.view;
+    const dirMap = {
+      front: new THREE.Vector3(0, 0, 1),
+      back: new THREE.Vector3(0, 0, -1),
+      right: new THREE.Vector3(1, 0, 0),
+      left: new THREE.Vector3(-1, 0, 0),
+      top: new THREE.Vector3(0, 1, 0),
+      bottom: new THREE.Vector3(0, -1, 0)
+    };
+    const dir = dirMap[view] || new THREE.Vector3(1, 1, 1).normalize();
+    const pos = center.clone().add(dir.multiplyScalar(distance));
+    camera.position.copy(pos);
+    controls.target.copy(center);
+    controls.update();
+  });
+}
 
 if (dom.resetBtn) dom.resetBtn.addEventListener("click", resetCamera);
 if (dom.exportBtn) dom.exportBtn.addEventListener("click", downloadHtml);

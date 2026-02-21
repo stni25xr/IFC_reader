@@ -44,6 +44,47 @@
         background: #f2f2f2;
         pointer-events: auto;
       }
+      #view-cube {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        width: 84px;
+        height: 84px;
+        perspective: 400px;
+        z-index: 10;
+        pointer-events: auto;
+      }
+      .cube {
+        width: 84px;
+        height: 84px;
+        position: relative;
+        transform-style: preserve-3d;
+        transform: rotateX(-22deg) rotateY(35deg);
+      }
+      .cube-face {
+        position: absolute;
+        width: 84px;
+        height: 84px;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid #cfcfcf;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: #333;
+        cursor: pointer;
+        user-select: none;
+      }
+      .cube-face:hover {
+        background: #e9f2ff;
+        border-color: #4a90e2;
+      }
+      .face-front { transform: translateZ(42px); }
+      .face-back { transform: rotateY(180deg) translateZ(42px); }
+      .face-right { transform: rotateY(90deg) translateZ(42px); }
+      .face-left { transform: rotateY(-90deg) translateZ(42px); }
+      .face-top { transform: rotateX(90deg) translateZ(42px); }
+      .face-bottom { transform: rotateX(-90deg) translateZ(42px); }
       header {
         display: flex;
         flex-direction: column;
@@ -330,6 +371,16 @@
       <div id="toolbar">
         <div id="viewer-info">Ingen modell ännu.</div>
         <button id="reset-btn" class="btn secondary" type="button">Återställ vy</button>
+      </div>
+      <div id="view-cube" aria-label="View cube">
+        <div class="cube">
+          <div class="cube-face face-front" data-view="front">FRONT</div>
+          <div class="cube-face face-back" data-view="back">BACK</div>
+          <div class="cube-face face-right" data-view="right">RIGHT</div>
+          <div class="cube-face face-left" data-view="left">LEFT</div>
+          <div class="cube-face face-top" data-view="top">TOP</div>
+          <div class="cube-face face-bottom" data-view="bottom">BOTTOM</div>
+        </div>
       </div>
       <div id="ifc-progress-container">
         <div id="ifc-progress-bar"></div>

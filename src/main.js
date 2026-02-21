@@ -152,7 +152,10 @@ const initScene = () => {
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = shade;
+    const gradient = ctx.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, shade);
+    gradient.addColorStop(1, "#9a9a9a");
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size, size);
     ctx.strokeStyle = "#9e9e9e";
     ctx.lineWidth = 6;
@@ -167,12 +170,12 @@ const initScene = () => {
   };
 
   cubeMaterials = [
-    createLabelMaterial("RIGHT", "#bdbdbd"),
-    createLabelMaterial("LEFT", "#b3b3b3"),
-    createLabelMaterial("TOP", "#9e9e9e"),
-    createLabelMaterial("BOTTOM", "#b3b3b3"),
-    createLabelMaterial("FRONT", "#bdbdbd"),
-    createLabelMaterial("BACK", "#a8a8a8")
+    createLabelMaterial("R", "#bdbdbd"),
+    createLabelMaterial("L", "#b3b3b3"),
+    createLabelMaterial("T", "#9e9e9e"),
+    createLabelMaterial("B", "#b3b3b3"),
+    createLabelMaterial("F", "#bdbdbd"),
+    createLabelMaterial("Bk", "#a8a8a8")
   ];
   const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
   cubeMesh = new THREE.Mesh(cubeGeo, cubeMaterials);
@@ -659,6 +662,11 @@ const updateClipPlanes = () => {
   if (yMinT > yMaxT) [yMinT, yMaxT] = [yMaxT, yMinT];
   if (zMinT > zMaxT) [zMinT, zMaxT] = [zMaxT, zMinT];
 
+  const eps = 0.001;
+  if (xMaxT - xMinT < eps) xMaxT = Math.min(1, xMinT + eps);
+  if (yMaxT - yMinT < eps) yMaxT = Math.min(1, yMinT + eps);
+  if (zMaxT - zMinT < eps) zMaxT = Math.min(1, zMinT + eps);
+
   const xMin = min.x + (max.x - min.x) * xMinT;
   const xMax = min.x + (max.x - min.x) * xMaxT;
   // Treat Z as height (up). Use Z for Length Z sliders, Y for Length Y.
@@ -674,14 +682,17 @@ const updateClipPlanes = () => {
   clipPlanes.zMin.constant = -zMin;
   clipPlanes.zMax.constant = zMax;
 
-  renderer.clippingPlanes = [
-    clipPlanes.xMin,
-    clipPlanes.xMax,
-    clipPlanes.yMin,
-    clipPlanes.yMax,
-    clipPlanes.zMin,
-    clipPlanes.zMax
-  ];
+  const anyClip = xMinT > 0 || xMaxT < 1 || yMinT > 0 || yMaxT < 1 || zMinT > 0 || zMaxT < 1;
+  renderer.clippingPlanes = anyClip
+    ? [
+        clipPlanes.xMin,
+        clipPlanes.xMax,
+        clipPlanes.yMin,
+        clipPlanes.yMax,
+        clipPlanes.zMin,
+        clipPlanes.zMax
+      ]
+    : [];
 
   if (dom.clipXValue) dom.clipXValue.textContent = `${Math.round(xMin)} - ${Math.round(xMax)}`;
   if (dom.clipYValue) dom.clipYValue.textContent = `${Math.round(yMin)} - ${Math.round(yMax)}`;

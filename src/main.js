@@ -31,7 +31,12 @@ const dom = {
   progressContainer: document.getElementById("ifc-progress-container"),
   progressBar: document.getElementById("ifc-progress-bar"),
   progressText: document.getElementById("ifc-progress-text"),
-  viewCube: document.getElementById("view-cube")
+  clipXMin: document.getElementById("clip-x-min"),
+  clipXMax: document.getElementById("clip-x-max"),
+  clipYMin: document.getElementById("clip-y-min"),
+  clipYMax: document.getElementById("clip-y-max"),
+  clipUnclip: document.getElementById("clip-unclip"),
+  clipClose: document.getElementById("clip-close")
 };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -40,6 +45,26 @@ const camera = new THREE.PerspectiveCamera(45, dom.viewer.clientWidth / dom.view
 const controls = new OrbitControls(camera, renderer.domElement);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+const cubeRaycaster = new THREE.Raycaster();
+const cubeMouse = new THREE.Vector2();
+
+const cubeScene = new THREE.Scene();
+const cubeCamera = new THREE.OrthographicCamera(-1.2, 1.2, 1.2, -1.2, 0.1, 10);
+cubeCamera.position.set(0, 0, 3);
+cubeCamera.lookAt(0, 0, 0);
+
+let cubeMesh = null;
+let cubeViewport = { x: 0, y: 0, size: 100 };
+let cameraTween = null;
+let cubeMaterials = [];
+let cubeHoverFace = null;
+
+const clipPlanes = {
+  xMin: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),
+  xMax: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+  yMin: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+  yMax: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0)
+};
 
 const ifcLoader = new IFCLoader();
 const wasmBasePath = `${import.meta.env.BASE_URL}wasm/`;
@@ -80,6 +105,8 @@ const completeProgress = () => {
 const initScene = () => {
   renderer.setSize(dom.viewer.clientWidth, dom.viewer.clientHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setClearColor(0xf2f2f2, 1);
+  renderer.localClippingEnabled = true;
   dom.viewer.appendChild(renderer.domElement);
 
   camera.position.set(14, 10, 14);
@@ -90,14 +117,72 @@ const initScene = () => {
   dirLight.position.set(10, 20, 15);
   scene.add(dirLight);
 
-  const grid = new THREE.GridHelper(60, 60, 0x7bdff6, 0x1f2346);
+  const grid = new THREE.GridHelper(60, 60, 0xcccccc, 0xdddddd);
   grid.material.opacity = 0.2;
   grid.material.transparent = true;
   scene.add(grid);
 
+  const createLabelMaterial = (label) => {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = "#cfcfcf";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(0, 0, size, size);
+    ctx.fillStyle = "#333333";
+    ctx.font = "bold 32px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, size / 2, size / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    return new THREE.MeshBasicMaterial({ map: texture, color: new THREE.Color("#ffffff") });
+  };
+
+  cubeMaterials = [
+    createLabelMaterial("RIGHT"),
+    createLabelMaterial("LEFT"),
+    createLabelMaterial("TOP"),
+    createLabelMaterial("BOTTOM"),
+    createLabelMaterial("FRONT"),
+    createLabelMaterial("BACK")
+  ];
+  const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+  cubeMesh = new THREE.Mesh(cubeGeo, cubeMaterials);
+  cubeScene.add(cubeMesh);
+
   const animate = () => {
     controls.update();
+    if (cameraTween) {
+      const now = performance.now();
+      const t = Math.min(1, (now - cameraTween.start) / cameraTween.duration);
+      camera.position.lerpVectors(cameraTween.fromPos, cameraTween.toPos, t);
+      controls.target.lerpVectors(cameraTween.fromTarget, cameraTween.toTarget, t);
+      if (t >= 1) cameraTween = null;
+    }
+
+    renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
+    renderer.setScissorTest(false);
     renderer.render(scene, camera);
+
+    // View cube
+    if (cubeMesh) {
+      cubeMesh.quaternion.copy(camera.quaternion).invert();
+      const size = 96 * window.devicePixelRatio;
+      const margin = 16 * window.devicePixelRatio;
+      const w = renderer.domElement.width;
+      const h = renderer.domElement.height;
+      cubeViewport = { x: w - size - margin, y: margin, size };
+      renderer.clearDepth();
+      renderer.setScissorTest(true);
+      renderer.setScissor(cubeViewport.x, cubeViewport.y, cubeViewport.size, cubeViewport.size);
+      renderer.setViewport(cubeViewport.x, cubeViewport.y, cubeViewport.size, cubeViewport.size);
+      renderer.render(cubeScene, cubeCamera);
+      renderer.setScissorTest(false);
+    }
     requestAnimationFrame(animate);
   };
   animate();
@@ -467,6 +552,73 @@ const handlePick = (event, isClick) => {
   const bounds = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+
+  const canvasX = (event.clientX - bounds.left) * (renderer.domElement.width / bounds.width);
+  const canvasY = (bounds.height - (event.clientY - bounds.top)) * (renderer.domElement.height / bounds.height);
+  const inCube =
+    cubeMesh &&
+    canvasX >= cubeViewport.x &&
+    canvasX <= cubeViewport.x + cubeViewport.size &&
+    canvasY >= cubeViewport.y &&
+    canvasY <= cubeViewport.y + cubeViewport.size;
+
+  if (!isClick && cubeMesh) {
+    if (inCube) {
+      const localX = (canvasX - cubeViewport.x) / cubeViewport.size;
+      const localY = (canvasY - cubeViewport.y) / cubeViewport.size;
+      cubeMouse.x = localX * 2 - 1;
+      cubeMouse.y = localY * 2 - 1;
+      cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
+      const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
+      const faceIndex = cubeHits.length ? Math.floor(cubeHits[0].faceIndex / 2) : null;
+      if (faceIndex !== cubeHoverFace) {
+        cubeHoverFace = faceIndex;
+        cubeMaterials.forEach((mat, idx) => {
+          mat.color.set(idx === faceIndex ? "#e9f2ff" : "#ffffff");
+        });
+      }
+    } else if (cubeHoverFace !== null) {
+      cubeHoverFace = null;
+      cubeMaterials.forEach((mat) => mat.color.set("#ffffff"));
+    }
+  }
+
+  if (isClick && inCube) {
+    const localX = (canvasX - cubeViewport.x) / cubeViewport.size;
+    const localY = (canvasY - cubeViewport.y) / cubeViewport.size;
+    cubeMouse.x = localX * 2 - 1;
+    cubeMouse.y = localY * 2 - 1;
+    cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
+    const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
+    if (cubeHits.length) {
+      const faceIndex = cubeHits[0].faceIndex;
+      const faceMap = ["right", "left", "top", "bottom", "front", "back"];
+      const face = faceMap[Math.floor(faceIndex / 2)];
+      if (state.modelCenter && state.modelRadius) {
+        const center = state.modelCenter;
+        const distance = state.modelRadius * 2.2;
+        const dirMap = {
+          front: new THREE.Vector3(0, 0, 1),
+          back: new THREE.Vector3(0, 0, -1),
+          right: new THREE.Vector3(1, 0, 0),
+          left: new THREE.Vector3(-1, 0, 0),
+          top: new THREE.Vector3(0, 1, 0),
+          bottom: new THREE.Vector3(0, -1, 0)
+        };
+        const dir = dirMap[face] || new THREE.Vector3(1, 1, 1).normalize();
+        cameraTween = {
+          start: performance.now(),
+          duration: 450,
+          fromPos: camera.position.clone(),
+          toPos: center.clone().add(dir.multiplyScalar(distance)),
+          fromTarget: controls.target.clone(),
+          toTarget: center.clone()
+        };
+      }
+    }
+    return;
+  }
+
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(scene.children, true);
   if (isClick) console.log("[pick] click", { x: event.clientX, y: event.clientY });
@@ -525,6 +677,36 @@ const resetCamera = () => {
   clearSelection();
 };
 
+const updateClipPlanes = () => {
+  if (!state.modelBox) return;
+  const min = state.modelBox.min;
+  const max = state.modelBox.max;
+  const xMinT = (Number(dom.clipXMin?.value || 0) || 0) / 100;
+  const xMaxT = (Number(dom.clipXMax?.value || 100) || 100) / 100;
+  const yMinT = (Number(dom.clipYMin?.value || 0) || 0) / 100;
+  const yMaxT = (Number(dom.clipYMax?.value || 100) || 100) / 100;
+
+  const xMin = min.x + (max.x - min.x) * xMinT;
+  const xMax = min.x + (max.x - min.x) * xMaxT;
+  const yMin = min.y + (max.y - min.y) * yMinT;
+  const yMax = min.y + (max.y - min.y) * yMaxT;
+
+  clipPlanes.xMin.constant = -xMin;
+  clipPlanes.xMax.constant = xMax;
+  clipPlanes.yMin.constant = -yMin;
+  clipPlanes.yMax.constant = yMax;
+
+  renderer.clippingPlanes = [clipPlanes.xMin, clipPlanes.xMax, clipPlanes.yMin, clipPlanes.yMax];
+};
+
+const unclipAll = () => {
+  if (dom.clipXMin) dom.clipXMin.value = "0";
+  if (dom.clipXMax) dom.clipXMax.value = "100";
+  if (dom.clipYMin) dom.clipYMin.value = "0";
+  if (dom.clipYMax) dom.clipYMax.value = "100";
+  renderer.clippingPlanes = [];
+};
+
 const readIfcFile = async (file) => {
   const buffer = await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -576,6 +758,22 @@ const readIfcFile = async (file) => {
   dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
   if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
   completeProgress();
+  unclipAll();
+};
+
+const setupClipUI = () => {
+  const onInput = () => updateClipPlanes();
+  dom.clipXMin?.addEventListener("input", onInput);
+  dom.clipXMax?.addEventListener("input", onInput);
+  dom.clipYMin?.addEventListener("input", onInput);
+  dom.clipYMax?.addEventListener("input", onInput);
+  dom.clipUnclip?.addEventListener("click", () => {
+    unclipAll();
+  });
+  dom.clipClose?.addEventListener("click", () => {
+    const panel = document.getElementById("clip-panel");
+    if (panel) panel.style.display = "none";
+  });
 };
 
 const setupDropzone = () => {
@@ -696,29 +894,7 @@ const downloadHtml = async () => {
 
 initScene();
 setupDropzone();
-if (dom.viewCube) {
-  dom.viewCube.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!target || !target.dataset?.view) return;
-    if (!state.modelCenter || !state.modelRadius) return;
-    const center = state.modelCenter;
-    const distance = state.modelRadius * 2.2;
-    const view = target.dataset.view;
-    const dirMap = {
-      front: new THREE.Vector3(0, 0, 1),
-      back: new THREE.Vector3(0, 0, -1),
-      right: new THREE.Vector3(1, 0, 0),
-      left: new THREE.Vector3(-1, 0, 0),
-      top: new THREE.Vector3(0, 1, 0),
-      bottom: new THREE.Vector3(0, -1, 0)
-    };
-    const dir = dirMap[view] || new THREE.Vector3(1, 1, 1).normalize();
-    const pos = center.clone().add(dir.multiplyScalar(distance));
-    camera.position.copy(pos);
-    controls.target.copy(center);
-    controls.update();
-  });
-}
+setupClipUI();
 
 if (dom.resetBtn) dom.resetBtn.addEventListener("click", resetCamera);
 if (dom.exportBtn) dom.exportBtn.addEventListener("click", downloadHtml);

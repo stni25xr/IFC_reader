@@ -44,47 +44,37 @@
         background: #f2f2f2;
         pointer-events: auto;
       }
-      #view-cube {
-        position: absolute;
-        right: 16px;
-        bottom: 16px;
-        width: 84px;
-        height: 84px;
-        perspective: 400px;
-        z-index: 10;
-        pointer-events: auto;
+      #clip-panel {
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 12px;
       }
-      .cube {
-        width: 84px;
-        height: 84px;
-        position: relative;
-        transform-style: preserve-3d;
-        transform: rotateX(-22deg) rotateY(35deg);
-      }
-      .cube-face {
-        position: absolute;
-        width: 84px;
-        height: 84px;
-        background: rgba(255,255,255,0.95);
-        border: 1px solid #cfcfcf;
-        display: flex;
+      .clip-row {
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        gap: 8px;
         align-items: center;
-        justify-content: center;
-        font-size: 10px;
+        font-size: 12px;
         color: #333;
-        cursor: pointer;
-        user-select: none;
+        margin-bottom: 8px;
       }
-      .cube-face:hover {
-        background: #e9f2ff;
-        border-color: #4a90e2;
+      .clip-row input[type="range"] {
+        width: 100%;
       }
-      .face-front { transform: translateZ(42px); }
-      .face-back { transform: rotateY(180deg) translateZ(42px); }
-      .face-right { transform: rotateY(90deg) translateZ(42px); }
-      .face-left { transform: rotateY(-90deg) translateZ(42px); }
-      .face-top { transform: rotateX(90deg) translateZ(42px); }
-      .face-bottom { transform: rotateX(-90deg) translateZ(42px); }
+      #clip-actions {
+        display: flex;
+        gap: 8px;
+      }
+      #clip-actions .btn.secondary {
+        background: #f5f5f5;
+        color: #111;
+        border: 1px solid #d0d0d0;
+      }
+      #clip-actions .btn.secondary:hover {
+        background: #ededed;
+      }
       header {
         display: flex;
         flex-direction: column;
@@ -365,22 +355,23 @@
       <div id="property-tabs" class="tabs"></div>
       <div id="property-view">Välj ett element för att se alla IFC-parametrar.</div>
       <div id="element-list" style="display:none;"></div>
+      <div id="clip-panel">
+        <div style="font-weight:600; margin-bottom:8px;">Clip</div>
+        <div class="clip-row"><div>X-min</div><input id="clip-x-min" type="range" min="0" max="100" value="0"></div>
+        <div class="clip-row"><div>X-max</div><input id="clip-x-max" type="range" min="0" max="100" value="100"></div>
+        <div class="clip-row"><div>Y-min</div><input id="clip-y-min" type="range" min="0" max="100" value="0"></div>
+        <div class="clip-row"><div>Y-max</div><input id="clip-y-max" type="range" min="0" max="100" value="100"></div>
+        <div id="clip-actions">
+          <button id="clip-unclip" class="btn secondary" type="button">Unclip</button>
+          <button id="clip-close" class="btn secondary" type="button">Close</button>
+        </div>
+      </div>
     </aside>
 
     <main id="viewer">
       <div id="toolbar">
         <div id="viewer-info">Ingen modell ännu.</div>
         <button id="reset-btn" class="btn secondary" type="button">Återställ vy</button>
-      </div>
-      <div id="view-cube" aria-label="View cube">
-        <div class="cube">
-          <div class="cube-face face-front" data-view="front">FRONT</div>
-          <div class="cube-face face-back" data-view="back">BACK</div>
-          <div class="cube-face face-right" data-view="right">RIGHT</div>
-          <div class="cube-face face-left" data-view="left">LEFT</div>
-          <div class="cube-face face-top" data-view="top">TOP</div>
-          <div class="cube-face face-bottom" data-view="bottom">BOTTOM</div>
-        </div>
       </div>
       <div id="ifc-progress-container">
         <div id="ifc-progress-bar"></div>

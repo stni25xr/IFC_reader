@@ -56,11 +56,11 @@ const showProgress = () => {
   updateProgress(0);
 };
 
-const updateProgress = (percent) => {
+const updateProgress = (percent, label = "Laddar element") => {
   if (!dom.progressContainer || !dom.progressBar || !dom.progressText) return;
   const safe = Math.max(0, Math.min(100, percent));
   dom.progressBar.style.width = `${safe}%`;
-  dom.progressText.textContent = `Laddar modell… ${safe}%`;
+  dom.progressText.textContent = `${label}… ${safe}%`;
 };
 
 const completeProgress = () => {
@@ -514,16 +514,8 @@ const resetCamera = () => {
 };
 
 const readIfcFile = async (file) => {
-  showProgress();
   const buffer = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadstart = () => updateProgress(0);
-    reader.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        updateProgress(percent);
-      }
-    };
     reader.onerror = () => reject(reader.error);
     reader.onload = () => resolve(reader.result);
     reader.readAsArrayBuffer(file);
@@ -545,8 +537,11 @@ const readIfcFile = async (file) => {
   state.modelID = model.modelID;
   state.spatialTree = await ifcLoader.ifcManager.getSpatialStructure(state.modelID);
   state.spatialIndex = await getSpatialIndex(state.modelID);
+  showProgress();
   const indexResult = await extractIfcIndex(state.modelID, (done, total) => {
+    const percent = Math.round((done / total) * 100);
     dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
+    updateProgress(percent, "Laddar element");
   });
   state.ifcIndex = indexResult.indexByGuid;
   state.ifcIndexByExpressId = indexResult.indexByExpressId;

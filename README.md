@@ -74,6 +74,21 @@ npx serve
 http://localhost:3000/viewer.html
 ```
 
+## Publicera online (GitHub Pages)
+
+Detta flöde publicerar ZIP-exporten till `docs/` och pushar till GitHub.
+Se till att GitHub Pages är inställt på **/docs**.
+
+```bash
+npm run publish:pages -- /path/to/ifc-offline-viewer.zip
+```
+
+Efter push finns din viewer på:
+
+```
+https://stni25xr.github.io/IFC_reader/
+```
+
 ## Viktigt om wasm
 
 Exporten kräver `public/wasm/web-ifc.wasm`. Om den saknas:

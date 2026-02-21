@@ -8,9 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:export": "node scripts/build-export.js",
-    "postinstall": "node scripts/copy-wasm.js"
+    "postinstall": "node scripts/copy-wasm.js",
+    "publish:pages": "node scripts/publish-pages.js"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "jszip": "^3.10.1",
     "three": "^0.149.0",
     "web-ifc": "^0.0.39",

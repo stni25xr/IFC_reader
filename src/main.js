@@ -633,10 +633,11 @@ const updateClipPlanes = () => {
 
   const xMin = min.x + (max.x - min.x) * xMinT;
   const xMax = min.x + (max.x - min.x) * xMaxT;
-  const yMin = min.y + (max.y - min.y) * yMinT;
-  const yMax = min.y + (max.y - min.y) * yMaxT;
-  const zMin = min.z + (max.z - min.z) * zMinT;
-  const zMax = min.z + (max.z - min.z) * zMaxT;
+  // Treat Z as height (up). Swap Y/Z for clipping controls.
+  const yMin = min.z + (max.z - min.z) * yMinT;
+  const yMax = min.z + (max.z - min.z) * yMaxT;
+  const zMin = min.y + (max.y - min.y) * zMinT;
+  const zMax = min.y + (max.y - min.y) * zMaxT;
 
   clipPlanes.xMin.constant = -xMin;
   clipPlanes.xMax.constant = xMax;
@@ -892,20 +893,38 @@ if (cubeRenderer && dom.viewCubeCanvas) {
     cubeRaycaster.setFromCamera(cubeMouse, cubeCamera);
     const cubeHits = cubeRaycaster.intersectObject(cubeMesh, false);
     if (!cubeHits.length) return;
-    const faceIndex = cubeHits[0].faceIndex;
-    const faceMap = ["right", "left", "top", "bottom", "front", "back"];
-    const face = faceMap[Math.floor(faceIndex / 2)];
+    const hit = cubeHits[0];
+    const local = cubeMesh.worldToLocal(hit.point.clone());
+    const ax = Math.abs(local.x);
+    const ay = Math.abs(local.y);
+    const az = Math.abs(local.z);
+    const edgeThreshold = 0.42;
+    const cornerThreshold = 0.42;
+    const dir = new THREE.Vector3(
+      Math.abs(local.x) > cornerThreshold ? Math.sign(local.x) : 0,
+      Math.abs(local.y) > cornerThreshold ? Math.sign(local.y) : 0,
+      Math.abs(local.z) > cornerThreshold ? Math.sign(local.z) : 0
+    );
+
+    if (dir.length() === 0) {
+      const faceIndex = hit.faceIndex;
+      const faceMap = ["right", "left", "top", "bottom", "front", "back"];
+      const face = faceMap[Math.floor(faceIndex / 2)];
+      const dirMap = {
+        front: new THREE.Vector3(0, 0, 1),
+        back: new THREE.Vector3(0, 0, -1),
+        right: new THREE.Vector3(1, 0, 0),
+        left: new THREE.Vector3(-1, 0, 0),
+        top: new THREE.Vector3(0, 1, 0),
+        bottom: new THREE.Vector3(0, -1, 0)
+      };
+      dir.copy(dirMap[face] || new THREE.Vector3(1, 1, 1).normalize());
+    } else {
+      // If near edge, combine two axes; near corner, combine three.
+      dir.normalize();
+    }
     const center = state.modelCenter;
     const distance = state.modelRadius * 2.2;
-    const dirMap = {
-      front: new THREE.Vector3(0, 0, 1),
-      back: new THREE.Vector3(0, 0, -1),
-      right: new THREE.Vector3(1, 0, 0),
-      left: new THREE.Vector3(-1, 0, 0),
-      top: new THREE.Vector3(0, 1, 0),
-      bottom: new THREE.Vector3(0, -1, 0)
-    };
-    const dir = dirMap[face] || new THREE.Vector3(1, 1, 1).normalize();
     cameraTween = {
       start: performance.now(),
       duration: 450,

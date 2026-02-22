@@ -113,6 +113,48 @@
         box-shadow: 0 6px 18px rgba(0,0,0,0.18);
         border: 1px solid rgba(0,0,0,0.12);
       }
+      #mini-map {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        width: 240px;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid rgba(0,0,0,0.12);
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.16);
+        padding: 10px;
+        z-index: 10;
+        pointer-events: auto;
+      }
+      #mini-map .mini-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: #1d1f2b;
+        margin-bottom: 6px;
+      }
+      #mini-map select {
+        font-size: 12px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        border: 1px solid #d7dbe3;
+        background: #ffffff;
+      }
+      #mini-map canvas {
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        display: block;
+        background: #f7f7f7;
+      }
+      #mini-map .mini-hint {
+        font-size: 11px;
+        color: #666;
+        margin-top: 6px;
+      }
       #aps-ribbon {
         position: fixed;
         bottom: 18px;
@@ -467,6 +509,16 @@
     <main id="viewer">
       <div id="toolbar">
         <div id="viewer-info">Ingen modell ännu.</div>
+      </div>
+      <div id="mini-map">
+        <div class="mini-header">
+          <span>Karta</span>
+          <select id="level-filter">
+            <option value="">Alla plan</option>
+          </select>
+        </div>
+        <canvas id="mini-map-canvas" width="220" height="220"></canvas>
+        <div class="mini-hint">Klicka/drag för att flytta.</div>
       </div>
       <div id="ifc-progress-container">
         <div id="ifc-progress-bar"></div>

@@ -47,6 +47,9 @@ const dom = {
   toolReset: document.getElementById("tool-reset"),
   toolSettings: document.getElementById("tool-settings"),
   settingsPanel: document.getElementById("aps-settings"),
+  miniMap: document.getElementById("mini-map"),
+  miniMapCanvas: document.getElementById("mini-map-canvas"),
+  levelFilter: document.getElementById("level-filter"),
   toggleGrid: document.getElementById("toggle-grid"),
   toggleEdges: document.getElementById("toggle-edges")
 };
@@ -72,6 +75,11 @@ let cameraTween = null;
 let cubeMaterials = [];
 let cubeHoverFace = null;
 let gridHelper = null;
+let miniMapCtx = null;
+let miniMapDragging = false;
+let miniMapOffset = null;
+let storeySubsetId = "storey-filter";
+let activeStoreyId = null;
 
 const clipPlanes = {
   xMin: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),
@@ -195,6 +203,8 @@ const initScene = () => {
     renderer.setScissorTest(false);
     renderer.render(scene, camera);
 
+    if (miniMapCtx) drawMiniMap();
+
     // View cube
     if (cubeMesh) {
       cubeMesh.quaternion.copy(camera.quaternion).invert();
@@ -214,9 +224,45 @@ const resize = () => {
   if (cubeRenderer && dom.viewCubeCanvas) {
     cubeRenderer.setSize(dom.viewCubeCanvas.clientWidth, dom.viewCubeCanvas.clientHeight, false);
   }
+  if (dom.miniMapCanvas) {
+    const width = dom.miniMapCanvas.clientWidth || 220;
+    dom.miniMapCanvas.width = Math.round(width * window.devicePixelRatio);
+    dom.miniMapCanvas.height = Math.round(width * window.devicePixelRatio);
+    miniMapCtx = dom.miniMapCanvas.getContext("2d");
+    if (miniMapCtx) miniMapCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
 };
 
 window.addEventListener("resize", resize);
+resize();
+
+if (dom.levelFilter) {
+  dom.levelFilter.addEventListener("change", (event) => {
+    setStoreyFilter(event.target.value);
+  });
+}
+
+if (dom.miniMapCanvas) {
+  dom.miniMapCanvas.addEventListener("pointerdown", (event) => {
+    miniMapDragging = true;
+    const pos = mapToWorld(event.clientX, event.clientY);
+    if (!pos) return;
+    miniMapOffset = camera.position.clone().sub(controls.target);
+    controls.target.copy(pos);
+    camera.position.copy(pos.clone().add(miniMapOffset));
+  });
+  dom.miniMapCanvas.addEventListener("pointermove", (event) => {
+    if (!miniMapDragging) return;
+    const pos = mapToWorld(event.clientX, event.clientY);
+    if (!pos) return;
+    controls.target.copy(pos);
+    if (miniMapOffset) camera.position.copy(pos.clone().add(miniMapOffset));
+  });
+  window.addEventListener("pointerup", () => {
+    miniMapDragging = false;
+    miniMapOffset = null;
+  });
+}
 
 const getSpatialIndex = async (modelID) => {
   const tree = await ifcLoader.ifcManager.getSpatialStructure(modelID);
@@ -235,6 +281,27 @@ const getSpatialIndex = async (modelID) => {
   };
   walk(tree, []);
   return index;
+};
+
+const getStoreyMap = (tree) => {
+  const storeys = new Map();
+  const walk = (node, currentStorey) => {
+    if (!node) return;
+    const isStorey = node.type === "IfcBuildingStorey";
+    const storeyNode = isStorey ? node : currentStorey;
+    if (isStorey && node.expressID) {
+      if (!storeys.has(node.expressID)) {
+        storeys.set(node.expressID, { id: node.expressID, name: node.name || `Storey ${node.expressID}`, ids: [] });
+      }
+    }
+    if (storeyNode && node.expressID) {
+      const entry = storeys.get(storeyNode.expressID);
+      if (entry && node.expressID) entry.ids.push(node.expressID);
+    }
+    (node.children || []).forEach((child) => walk(child, storeyNode));
+  };
+  walk(tree, null);
+  return storeys;
 };
 
 const extractIfcIndex = async (modelID, onProgress) => {
@@ -658,6 +725,116 @@ const resetCamera = () => {
   clearSelection();
 };
 
+const drawMiniMap = () => {
+  if (!dom.miniMapCanvas || !miniMapCtx) return;
+  const model = getActiveModel();
+  const ctx = miniMapCtx;
+  const width = dom.miniMapCanvas.clientWidth || 220;
+  const height = width;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#f7f7f7";
+  ctx.fillRect(0, 0, width, height);
+
+  if (!model?.box) return;
+  const min = model.box.min;
+  const max = model.box.max;
+
+  const pad = 12;
+  const rangeX = max.x - min.x || 1;
+  const rangeZ = max.z - min.z || 1;
+  const scale = Math.min((width - pad * 2) / rangeX, (height - pad * 2) / rangeZ);
+
+  const toMap = (x, z) => ({
+    x: pad + (x - min.x) * scale,
+    y: height - (pad + (z - min.z) * scale)
+  });
+
+  // Bounding box
+  ctx.strokeStyle = "#d0d0d0";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, pad, rangeX * scale, rangeZ * scale);
+
+  // Camera marker
+  const cam = camera.position;
+  const target = controls.target;
+  const camPt = toMap(cam.x, cam.z);
+  const tgtPt = toMap(target.x, target.z);
+
+  ctx.strokeStyle = "#4a90e2";
+  ctx.beginPath();
+  ctx.moveTo(tgtPt.x, tgtPt.y);
+  ctx.lineTo(camPt.x, camPt.y);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ff7a7a";
+  ctx.beginPath();
+  ctx.arc(camPt.x, camPt.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#4a90e2";
+  ctx.beginPath();
+  ctx.arc(tgtPt.x, tgtPt.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+const mapToWorld = (clientX, clientY) => {
+  const model = getActiveModel();
+  if (!model?.box || !dom.miniMapCanvas) return null;
+  const rect = dom.miniMapCanvas.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  const min = model.box.min;
+  const max = model.box.max;
+  const pad = 12;
+  const rangeX = max.x - min.x || 1;
+  const rangeZ = max.z - min.z || 1;
+  const scale = Math.min((width - pad * 2) / rangeX, (height - pad * 2) / rangeZ);
+  const x = (clientX - rect.left - pad) / scale + min.x;
+  const z = (height - (clientY - rect.top) - pad) / scale + min.z;
+  return new THREE.Vector3(x, controls.target.y, z);
+};
+
+const setStoreyFilter = (storeyId) => {
+  const model = getActiveModel();
+  if (!model) return;
+  activeStoreyId = storeyId || null;
+
+  if (!activeStoreyId) {
+    model.object3D.visible = true;
+    clearSubset(model.id, storeySubsetId);
+    return;
+  }
+
+  const storey = model.storeyMap?.get(Number(activeStoreyId));
+  if (!storey) return;
+  model.object3D.visible = false;
+  ifcLoader.ifcManager.createSubset({
+    modelID: model.id,
+    ids: storey.ids,
+    scene,
+    removePrevious: true,
+    customID: storeySubsetId
+  });
+  clearSelection();
+};
+
+const populateStoreyFilter = () => {
+  if (!dom.levelFilter) return;
+  dom.levelFilter.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "";
+  allOpt.textContent = "Alla plan";
+  dom.levelFilter.appendChild(allOpt);
+  const model = getActiveModel();
+  if (!model?.storeyMap) return;
+  model.storeyMap.forEach((storey) => {
+    const opt = document.createElement("option");
+    opt.value = storey.id;
+    opt.textContent = storey.name || `Storey ${storey.id}`;
+    dom.levelFilter.appendChild(opt);
+  });
+};
+
 const fitToView = () => {
   const model = getActiveModel();
   if (!model?.center || !model?.radius) return;
@@ -753,6 +930,7 @@ const readIfcFile = async (file) => {
 
     const spatialTree = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
     const spatialIndex = await getSpatialIndex(model.modelID);
+    const storeyMap = getStoreyMap(spatialTree);
     showProgress();
     const indexResult = await extractIfcIndex(model.modelID, (done, total) => {
       const percent = Math.round((done / total) * 100);
@@ -770,6 +948,7 @@ const readIfcFile = async (file) => {
       radius: Math.max(size.x, size.y, size.z) * 0.5 || 10,
       spatialTree,
       spatialIndex,
+      storeyMap,
       ifcIndex: indexResult.indexByGuid,
       ifcIndexByExpressId: indexResult.indexByExpressId,
       ifcDataFull: {},
@@ -782,6 +961,8 @@ const readIfcFile = async (file) => {
     if (state.activeModelId === modelEntry.id) {
       renderTree(modelEntry.spatialTree);
       buildList(modelEntry.ifcIndex);
+      populateStoreyFilter();
+      setStoreyFilter("");
       resetCamera();
     }
 
@@ -849,6 +1030,8 @@ const renderModelList = () => {
     if (active) {
       renderTree(active.spatialTree);
       buildList(active.ifcIndex);
+      populateStoreyFilter();
+      setStoreyFilter("");
       resetCamera();
     }
   };

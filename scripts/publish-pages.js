@@ -22,6 +22,8 @@ if (!zipPath) {
 
 const projectRoot = process.cwd();
 const docsDir = path.join(projectRoot, "docs");
+const launcherSrc = path.join(projectRoot, "public", "launcher");
+const launcherDest = path.join(docsDir, "launcher");
 
 const clearDir = async (dir) => {
   await fs.rm(dir, { recursive: true, force: true });
@@ -31,6 +33,24 @@ const clearDir = async (dir) => {
 const copyIfExists = async (src, dest) => {
   try {
     await fs.copyFile(src, dest);
+  } catch {
+    // ignore
+  }
+};
+
+const copyDir = async (srcDir, destDir) => {
+  try {
+    await fs.mkdir(destDir, { recursive: true });
+    const entries = await fs.readdir(srcDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(srcDir, entry.name);
+      const destPath = path.join(destDir, entry.name);
+      if (entry.isDirectory()) {
+        await copyDir(srcPath, destPath);
+      } else {
+        await fs.copyFile(srcPath, destPath);
+      }
+    }
   } catch {
     // ignore
   }
@@ -47,6 +67,7 @@ const main = async () => {
   await copyIfExists(viewerPath, indexPath);
 
   await fs.writeFile(path.join(docsDir, ".nojekyll"), "");
+  await copyDir(launcherSrc, launcherDest);
 
   await run("git", ["add", "docs"]);
   const { stdout: statusOut } = await run("git", ["status", "--porcelain", "docs"]);

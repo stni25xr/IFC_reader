@@ -101,3 +101,13 @@ npm run postinstall
 
 Export-viewern hämtar metadata **on-demand** när du klickar på ett element.
 Detta gör att även stora IFC-filer fungerar utan minnesfel.
+
+## Online launcher (ingen server)
+
+Du kan använda en online launcher som låter dig välja ZIP direkt i webbläsaren:
+
+- Öppna: https://stni25xr.github.io/IFC_reader/launcher/
+- Välj din exporterade `ifc-offline-viewer.zip`
+- Viewer startar direkt i webbläsaren
+
+OBS: Kräver HTTPS (GitHub Pages funkar).

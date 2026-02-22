@@ -19,6 +19,7 @@ const dom = {
   resetBtn: document.getElementById("reset-btn"),
   exportBtn: document.getElementById("export-btn"),
   publishBtn: document.getElementById("publish-btn"),
+  launcherBtn: document.getElementById("launcher-btn"),
   dropzone: document.getElementById("dropzone"),
   fileInput: document.getElementById("file-input"),
   fileButton: document.getElementById("file-button"),
@@ -1210,5 +1211,12 @@ if (dom.publishBtn) {
     } catch {
       // ignore
     }
+  });
+}
+if (dom.launcherBtn) {
+  dom.launcherBtn.addEventListener("click", () => {
+    const base = import.meta.env.BASE_URL || "/";
+    const url = `${base}launcher/`;
+    window.open(url, "_blank", "noopener");
   });
 }

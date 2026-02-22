@@ -218,16 +218,6 @@ const resize = () => {
 
 window.addEventListener("resize", resize);
 
-const arrayBufferToBase64 = (buffer) => {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-};
-
 const getSpatialIndex = async (modelID) => {
   const tree = await ifcLoader.ifcManager.getSpatialStructure(modelID);
   const index = {};
@@ -745,64 +735,70 @@ const unclipAll = () => {
 };
 
 const readIfcFile = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const ifcBase64 = arrayBufferToBase64(buffer);
-  dom.status.textContent = `Laddar ${file.name}...`;
-  dom.viewerInfo.textContent = `Läser ${file.name}`;
-  dom.exportBtn.disabled = true;
+  try {
+    const buffer = await file.arrayBuffer();
+    dom.status.textContent = `Laddar ${file.name}...`;
+    dom.viewerInfo.textContent = `Läser ${file.name}`;
+    dom.exportBtn.disabled = true;
 
-  const model = await ifcLoader.parse(buffer);
-  model.userData.modelID = model.modelID;
-  scene.add(model);
+    const model = await ifcLoader.parse(buffer);
+    model.userData.modelID = model.modelID;
+    scene.add(model);
 
-  const box = new THREE.Box3().setFromObject(model);
-  const center = new THREE.Vector3();
-  const size = new THREE.Vector3();
-  box.getCenter(center);
-  box.getSize(size);
+    const box = new THREE.Box3().setFromObject(model);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
 
-  const spatialTree = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
-  const spatialIndex = await getSpatialIndex(model.modelID);
-  showProgress();
-  const indexResult = await extractIfcIndex(model.modelID, (done, total) => {
-    const percent = Math.round((done / total) * 100);
-    dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
-    updateProgress(percent, "Laddar element");
-  });
+    const spatialTree = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
+    const spatialIndex = await getSpatialIndex(model.modelID);
+    showProgress();
+    const indexResult = await extractIfcIndex(model.modelID, (done, total) => {
+      const percent = Math.round((done / total) * 100);
+      dom.status.textContent = `Indexerar IFC... ${done}/${total}`;
+      updateProgress(percent, "Laddar element");
+    });
 
-  const modelEntry = {
-    id: model.modelID,
-    filename: file.name,
-    ifcBase64,
-    ifcBuffer: buffer,
-    object3D: model,
-    box,
-    center,
-    radius: Math.max(size.x, size.y, size.z) * 0.5 || 10,
-    spatialTree,
-    spatialIndex,
-    ifcIndex: indexResult.indexByGuid,
-    ifcIndexByExpressId: indexResult.indexByExpressId,
-    ifcDataFull: {},
-    visible: true
-  };
-  state.models.push(modelEntry);
-  if (!state.activeModelId) state.activeModelId = modelEntry.id;
+    const modelEntry = {
+      id: model.modelID,
+      filename: file.name,
+      ifcBuffer: buffer,
+      object3D: model,
+      box,
+      center,
+      radius: Math.max(size.x, size.y, size.z) * 0.5 || 10,
+      spatialTree,
+      spatialIndex,
+      ifcIndex: indexResult.indexByGuid,
+      ifcIndexByExpressId: indexResult.indexByExpressId,
+      ifcDataFull: {},
+      visible: true
+    };
+    state.models.push(modelEntry);
+    if (!state.activeModelId) state.activeModelId = modelEntry.id;
 
-  renderModelList();
-  if (state.activeModelId === modelEntry.id) {
-    renderTree(modelEntry.spatialTree);
-    buildList(modelEntry.ifcIndex);
-    resetCamera();
+    renderModelList();
+    if (state.activeModelId === modelEntry.id) {
+      renderTree(modelEntry.spatialTree);
+      buildList(modelEntry.ifcIndex);
+      resetCamera();
+    }
+
+    dom.status.textContent = "";
+    dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
+    dom.exportBtn.disabled = false;
+    dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
+    if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
+    completeProgress();
+    unclipAll();
+  } catch (err) {
+    console.error("[load] fail", file?.name, err);
+    dom.status.textContent = `Misslyckades att läsa ${file?.name || "IFC"}.`;
+    dom.viewerInfo.textContent = "Kunde inte läsa modellen.";
+    dom.exportBtn.disabled = state.models.length === 0;
+    completeProgress();
   }
-
-  dom.status.textContent = "";
-  dom.viewerInfo.textContent = `Modell laddad: ${file.name}`;
-  dom.exportBtn.disabled = false;
-  dom.props.textContent = "Välj ett element för att se alla IFC-parametrar.";
-  if (dom.propertyTabs) dom.propertyTabs.innerHTML = "";
-  completeProgress();
-  unclipAll();
 };
 
 const loadIfcFiles = async (files) => {
@@ -906,9 +902,6 @@ const setupDropzone = () => {
 const buildExportZip = async () => {
   if (!state.models.length) return null;
 
-  const activeModel = getActiveModel();
-  if (!activeModel) return null;
-
   const wasmResponse = await fetch(`${wasmBasePath}web-ifc.wasm`);
   if (!wasmResponse.ok) throw new Error("Kunde inte läsa web-ifc.wasm. Kontrollera public/wasm/");
   const wasmBuffer = await wasmResponse.arrayBuffer();
@@ -921,21 +914,19 @@ const buildExportZip = async () => {
   zip.folder("wasm").file("web-ifc.wasm", wasmBuffer);
 
   const modelsFolder = zip.folder("models");
-  const safeName = activeModel.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
-  const modelPath = `models/0_${safeName}`;
-  modelsFolder.file(`0_${safeName}`, activeModel.ifcBuffer);
-  zip.file(
-    "bundle.json",
-    JSON.stringify({
-      models: [
-        {
-          filename: activeModel.filename,
-          ifcPath: modelPath,
-          visible: true
-        }
-      ]
-    })
-  );
+  const bundleModels = [];
+  for (let i = 0; i < state.models.length; i += 1) {
+    const model = state.models[i];
+    const safeName = model.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const modelPath = `models/${i}_${safeName}`;
+    modelsFolder.file(`${i}_${safeName}`, model.ifcBuffer);
+    bundleModels.push({
+      filename: model.filename,
+      ifcPath: modelPath,
+      visible: model.visible !== false
+    });
+  }
+  zip.file("bundle.json", JSON.stringify({ models: bundleModels }));
 
   const html = `<!doctype html>
 <html lang="sv">
@@ -1076,11 +1067,7 @@ ${bundleCode}
 
 const downloadHtml = async () => {
   try {
-    if (state.models.length > 1) {
-      dom.status.textContent = "Export stödjer en modell. Använder aktiv modell.";
-    } else {
-      dom.status.textContent = "Skapar export...";
-    }
+    dom.status.textContent = "Skapar export...";
     const blob = await buildExportZip();
     if (!blob) return;
     const url = URL.createObjectURL(blob);

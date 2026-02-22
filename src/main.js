@@ -1216,7 +1216,7 @@ if (dom.publishBtn) {
 if (dom.launcherBtn) {
   dom.launcherBtn.addEventListener("click", () => {
     const base = import.meta.env.BASE_URL || "/";
-    const url = `${base}launcher/`;
+    const url = `${base}launcher/launcher.html`;
     window.open(url, "_blank", "noopener");
   });
 }

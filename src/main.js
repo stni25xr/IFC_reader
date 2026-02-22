@@ -732,7 +732,7 @@ const drawMiniMap = () => {
   const width = dom.miniMapCanvas.clientWidth || 220;
   const height = width;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#f7f7f7";
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
   if (!model?.box) return;
@@ -749,32 +749,63 @@ const drawMiniMap = () => {
     y: height - (pad + (z - min.z) * scale)
   });
 
-  // Bounding box
-  ctx.strokeStyle = "#d0d0d0";
+  // Grid + bounding box
+  const boxW = rangeX * scale;
+  const boxH = rangeZ * scale;
+  const gridCount = 6;
+  ctx.strokeStyle = "#cfd6ff";
   ctx.lineWidth = 1;
-  ctx.strokeRect(pad, pad, rangeX * scale, rangeZ * scale);
+  for (let i = 0; i <= gridCount; i += 1) {
+    const gx = pad + (boxW / gridCount) * i;
+    const gy = pad + (boxH / gridCount) * i;
+    ctx.beginPath();
+    ctx.moveTo(gx, pad);
+    ctx.lineTo(gx, pad + boxH);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pad, gy);
+    ctx.lineTo(pad + boxW, gy);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#b9c2ff";
+  ctx.strokeRect(pad, pad, boxW, boxH);
 
-  // Camera marker
+  // Camera/target marker (person view)
   const cam = camera.position;
   const target = controls.target;
   const camPt = toMap(cam.x, cam.z);
   const tgtPt = toMap(target.x, target.z);
 
-  ctx.strokeStyle = "#4a90e2";
+  const dir = new THREE.Vector2(camPt.x - tgtPt.x, camPt.y - tgtPt.y);
+  if (dir.length() < 0.001) dir.set(0, -1);
+  dir.normalize();
+
+  // FOV wedge
+  const wedgeRadius = 26;
+  const wedgeAngle = Math.PI / 5;
+  const angle = Math.atan2(dir.y, dir.x);
+  ctx.fillStyle = "#7ee083";
   ctx.beginPath();
   ctx.moveTo(tgtPt.x, tgtPt.y);
-  ctx.lineTo(camPt.x, camPt.y);
+  ctx.lineTo(
+    tgtPt.x + Math.cos(angle - wedgeAngle) * wedgeRadius,
+    tgtPt.y + Math.sin(angle - wedgeAngle) * wedgeRadius
+  );
+  ctx.lineTo(
+    tgtPt.x + Math.cos(angle + wedgeAngle) * wedgeRadius,
+    tgtPt.y + Math.sin(angle + wedgeAngle) * wedgeRadius
+  );
+  ctx.closePath();
+  ctx.fill();
+
+  // Person circle
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#7aa7ff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(tgtPt.x, tgtPt.y, 6, 0, Math.PI * 2);
+  ctx.fill();
   ctx.stroke();
-
-  ctx.fillStyle = "#ff7a7a";
-  ctx.beginPath();
-  ctx.arc(camPt.x, camPt.y, 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#4a90e2";
-  ctx.beginPath();
-  ctx.arc(tgtPt.x, tgtPt.y, 4, 0, Math.PI * 2);
-  ctx.fill();
 };
 
 const mapToWorld = (clientX, clientY) => {

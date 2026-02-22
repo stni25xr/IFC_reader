@@ -19,8 +19,11 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (!url.pathname.includes("/__ifc_zip__/")) return;
-  const entry = fileMap.get(url.pathname);
+  const marker = "/__ifc_zip__/";
+  const idx = url.pathname.indexOf(marker);
+  if (idx === -1) return;
+  const key = url.pathname.slice(idx);
+  const entry = fileMap.get(key);
   if (!entry) {
     event.respondWith(new Response("Not found", { status: 404 }));
     return;

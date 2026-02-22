@@ -8,18 +8,10 @@
     status.textContent = msg || "";
   };
 
-  const getBasePath = () => {
-    // For GitHub Pages: /{user}.github.io/{repo}/launcher/
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    if (parts.length >= 2) return `/${parts[0]}/${parts[1]}/`;
-    return "/";
-  };
-
   const ensureServiceWorker = async () => {
     if (!("serviceWorker" in navigator)) throw new Error("Service Worker stöds inte i din webbläsare.");
-    const base = getBasePath();
-    const swUrl = `${base}launcher/launcher-sw.js`;
-    const reg = await navigator.serviceWorker.register(swUrl, { scope: base });
+    const swUrl = "./launcher-sw.js";
+    const reg = await navigator.serviceWorker.register(swUrl, { scope: "./" });
     await navigator.serviceWorker.ready;
     return reg;
   };
@@ -40,7 +32,6 @@
       setStatus("Läser ZIP...");
       const zip = await JSZip.loadAsync(file);
       const entries = Object.values(zip.files);
-      const base = getBasePath();
       const prefix = "__ifc_zip__/";
       const files = [];
 
@@ -57,7 +48,7 @@
       reg.active.postMessage({ type: "zip-files", files });
       setStatus("Startar viewer...");
 
-      const target = `${base}${prefix}viewer.html`;
+      const target = `./${prefix}viewer.html`;
       window.location.href = target;
     } catch (err) {
       console.error(err);

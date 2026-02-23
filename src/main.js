@@ -2,6 +2,7 @@ import * as THREE from "three";
 import JSZip from "jszip";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { IFCLoader } from "web-ifc-three/IFCLoader";
+import { createCameraRig, applyPlanSlice, clearPlanSlice, extractStoreyLevels } from "./shared/viewer-tools.js";
 
 const state = {
   models: [],
@@ -40,8 +41,13 @@ const dom = {
   clipYValue: document.getElementById("clip-y-value"),
   clipZValue: document.getElementById("clip-z-value"),
   viewCubeCanvas: document.getElementById("view-cube-canvas"),
+  planPanel: document.getElementById("plan-panel"),
+  planEnable: document.getElementById("plan-enable"),
+  planLevel: document.getElementById("plan-level"),
   toolWalk: document.getElementById("tool-walk"),
   toolMeasure: document.getElementById("tool-measure"),
+  toolMap: document.getElementById("tool-map"),
+  toolCamera: document.getElementById("tool-camera"),
   toolClip: document.getElementById("tool-clip"),
   toolFit: document.getElementById("tool-fit"),
   toolReset: document.getElementById("tool-reset"),
@@ -56,8 +62,8 @@ const dom = {
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, dom.viewer.clientWidth / dom.viewer.clientHeight, 0.1, 4000);
-const controls = new OrbitControls(camera, renderer.domElement);
+const cameraRig = createCameraRig(dom.viewer.clientWidth, dom.viewer.clientHeight, { fov: 50 });
+const controls = new OrbitControls(cameraRig.active, renderer.domElement);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const cubeRaycaster = new THREE.Raycaster();
@@ -80,6 +86,11 @@ let miniMapDragging = false;
 let miniMapOffset = null;
 let storeySubsetId = "storey-filter";
 let activeStoreyId = null;
+let planMode = false;
+let planLevelSelection = null;
+let lastCameraMode = "persp";
+let planLevelMap = new Map();
+let savedClipPlanes = null;
 
 const clipPlanes = {
   xMin: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),
@@ -141,7 +152,8 @@ const initScene = () => {
     cubeRenderer.setClearColor(0x000000, 0);
   }
 
-  camera.position.set(14, 10, 14);
+  cameraRig.active.position.set(14, 10, 14);
+  cameraRig.setTarget(new THREE.Vector3(0, 0, 0));
   controls.enableDamping = true;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -194,20 +206,20 @@ const initScene = () => {
     if (cameraTween) {
       const now = performance.now();
       const t = Math.min(1, (now - cameraTween.start) / cameraTween.duration);
-      camera.position.lerpVectors(cameraTween.fromPos, cameraTween.toPos, t);
+      cameraRig.active.position.lerpVectors(cameraTween.fromPos, cameraTween.toPos, t);
       controls.target.lerpVectors(cameraTween.fromTarget, cameraTween.toTarget, t);
       if (t >= 1) cameraTween = null;
     }
 
     renderer.setViewport(0, 0, renderer.domElement.width, renderer.domElement.height);
     renderer.setScissorTest(false);
-    renderer.render(scene, camera);
+    renderer.render(scene, cameraRig.active);
 
     if (miniMapCtx) drawMiniMap();
 
     // View cube
     if (cubeMesh) {
-      cubeMesh.quaternion.copy(camera.quaternion).invert();
+      cubeMesh.quaternion.copy(cameraRig.active.quaternion).invert();
       if (cubeRenderer && dom.viewCubeCanvas) {
         cubeRenderer.render(cubeScene, cubeCamera);
       }
@@ -218,8 +230,7 @@ const initScene = () => {
 };
 
 const resize = () => {
-  camera.aspect = dom.viewer.clientWidth / dom.viewer.clientHeight;
-  camera.updateProjectionMatrix();
+  cameraRig.resize(dom.viewer.clientWidth, dom.viewer.clientHeight);
   renderer.setSize(dom.viewer.clientWidth, dom.viewer.clientHeight);
   if (cubeRenderer && dom.viewCubeCanvas) {
     cubeRenderer.setSize(dom.viewCubeCanvas.clientWidth, dom.viewCubeCanvas.clientHeight, false);
@@ -247,16 +258,16 @@ if (dom.miniMapCanvas) {
     miniMapDragging = true;
     const pos = mapToWorld(event.clientX, event.clientY);
     if (!pos) return;
-    miniMapOffset = camera.position.clone().sub(controls.target);
+    miniMapOffset = cameraRig.active.position.clone().sub(controls.target);
     controls.target.copy(pos);
-    camera.position.copy(pos.clone().add(miniMapOffset));
+    cameraRig.active.position.copy(pos.clone().add(miniMapOffset));
   });
   dom.miniMapCanvas.addEventListener("pointermove", (event) => {
     if (!miniMapDragging) return;
     const pos = mapToWorld(event.clientX, event.clientY);
     if (!pos) return;
     controls.target.copy(pos);
-    if (miniMapOffset) camera.position.copy(pos.clone().add(miniMapOffset));
+    if (miniMapOffset) cameraRig.active.position.copy(pos.clone().add(miniMapOffset));
   });
   window.addEventListener("pointerup", () => {
     miniMapDragging = false;
@@ -654,7 +665,7 @@ const handlePick = (event, isClick) => {
   mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
   mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
 
-  raycaster.setFromCamera(mouse, camera);
+  raycaster.setFromCamera(mouse, cameraRig.active);
   const hits = raycaster.intersectObjects(scene.children, true);
   if (isClick) console.log("[pick] click", { x: event.clientX, y: event.clientY });
   console.log("[pick] hits:", hits.length);
@@ -715,12 +726,14 @@ const resetCamera = () => {
   if (model?.center && model?.radius) {
     const center = model.center;
     const distance = model.radius * 2.2;
-    camera.position.set(center.x + distance, center.y + distance, center.z + distance);
     controls.target.copy(center);
+    cameraRig.setFrame(center, model.radius);
   } else {
-    camera.position.set(14, 10, 14);
     controls.target.set(0, 0, 0);
+    cameraRig.active.position.set(14, 10, 14);
   }
+  cameraRig.setTarget(controls.target);
+  controls.object = cameraRig.active;
   controls.update();
   clearSelection();
 };
@@ -771,7 +784,7 @@ const drawMiniMap = () => {
   ctx.strokeRect(pad, pad, boxW, boxH);
 
   // Camera/target marker (person view)
-  const cam = camera.position;
+  const cam = cameraRig.active.position;
   const target = controls.target;
   const camPt = toMap(cam.x, cam.z);
   const tgtPt = toMap(target.x, target.z);
@@ -866,13 +879,70 @@ const populateStoreyFilter = () => {
   });
 };
 
+const populatePlanLevels = () => {
+  if (!dom.planLevel) return;
+  dom.planLevel.innerHTML = "";
+  planLevelMap = new Map();
+  const opt = document.createElement("option");
+  opt.value = "";
+  opt.textContent = "Välj level";
+  dom.planLevel.appendChild(opt);
+  state.models.forEach((model) => {
+    (model.levels || []).forEach((level) => {
+      const key = `${model.id}:${level.id}`;
+      planLevelMap.set(key, { ...level, modelID: model.id, modelName: model.filename });
+      const label = `${model.filename} – ${level.name} (${level.elevation.toFixed(2)}m)`;
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = label;
+      dom.planLevel.appendChild(option);
+    });
+  });
+};
+
+const setPlanMode = (enabled) => {
+  planMode = enabled;
+  if (!enabled) {
+    controls.enableRotate = true;
+    if (savedClipPlanes) renderer.clippingPlanes = savedClipPlanes;
+    else clearPlanSlice(renderer);
+    savedClipPlanes = null;
+    if (lastCameraMode) cameraRig.setMode(lastCameraMode, controls.target);
+    controls.object = cameraRig.active;
+    controls.update();
+    return;
+  }
+  lastCameraMode = cameraRig.mode;
+  savedClipPlanes = renderer.clippingPlanes;
+  controls.enableRotate = false;
+  cameraRig.setMode("ortho", controls.target);
+  controls.object = cameraRig.active;
+  controls.update();
+};
+
+const applyPlanSelection = () => {
+  if (!planMode || !planLevelSelection) return;
+  const level = planLevelMap.get(planLevelSelection);
+  if (!level) return;
+  const model = getModelById(level.modelID);
+  if (!model) return;
+  const target = model.center.clone();
+  target.z = level.elevation;
+  controls.target.copy(target);
+  const distance = model.radius * 2.2;
+  cameraRig.setMode("ortho", target, distance, new THREE.Vector3(0, 0, 1));
+  controls.object = cameraRig.active;
+  controls.update();
+  applyPlanSlice(renderer, level.elevation + 1.2, 0.6, "z");
+};
+
 const fitToView = () => {
   const model = getActiveModel();
   if (!model?.center || !model?.radius) return;
   const center = model.center;
-  const distance = model.radius * 2.2;
-  camera.position.set(center.x + distance, center.y + distance, center.z + distance);
   controls.target.copy(center);
+  cameraRig.setFrame(center, model.radius);
+  controls.object = cameraRig.active;
   controls.update();
 };
 
@@ -962,6 +1032,7 @@ const readIfcFile = async (file) => {
     const spatialTree = await ifcLoader.ifcManager.getSpatialStructure(model.modelID);
     const spatialIndex = await getSpatialIndex(model.modelID);
     const storeyMap = getStoreyMap(spatialTree);
+    const levels = await extractStoreyLevels(ifcLoader, model.modelID, spatialTree);
     showProgress();
     const indexResult = await extractIfcIndex(model.modelID, (done, total) => {
       const percent = Math.round((done / total) * 100);
@@ -980,12 +1051,15 @@ const readIfcFile = async (file) => {
       spatialTree,
       spatialIndex,
       storeyMap,
+      levels,
       ifcIndex: indexResult.indexByGuid,
       ifcIndexByExpressId: indexResult.indexByExpressId,
       ifcDataFull: {},
       visible: true
     };
     state.models.push(modelEntry);
+    state.modelCenter = center.clone();
+    state.modelRadius = modelEntry.radius;
     if (!state.activeModelId) state.activeModelId = modelEntry.id;
 
     renderModelList();
@@ -994,6 +1068,7 @@ const readIfcFile = async (file) => {
       buildList(modelEntry.ifcIndex);
       populateStoreyFilter();
       setStoreyFilter("");
+      populatePlanLevels();
       resetCamera();
     }
 
@@ -1199,6 +1274,32 @@ const buildExportZip = async () => {
       box-shadow: 0 6px 18px rgba(0,0,0,0.18);
       border: 1px solid rgba(0,0,0,0.12);
     }
+    #plan-panel {
+      position: absolute;
+      right: 12px;
+      top: 120px;
+      width: 240px;
+      background: #ffffff;
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.16);
+      padding: 12px;
+      z-index: 10;
+      display: none;
+      color: #1d1f2b;
+      font-size: 12px;
+    }
+    #plan-panel h4 { margin: 0 0 8px; font-size: 13px; }
+    #plan-panel label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    #plan-panel select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #d7dbe3;
+      background: #ffffff;
+      font-size: 12px;
+    }
+    .mini-hint { font-size: 11px; color: #666; }
     #aps-ribbon {
       position: absolute;
       bottom: 16px;
@@ -1245,10 +1346,32 @@ const buildExportZip = async () => {
       </div>
     </div>
     <canvas id="view-cube-canvas" width="120" height="120"></canvas>
+    <div id="plan-panel">
+      <h4>2D Plan View</h4>
+      <label><input id="plan-enable" type="checkbox" /> Enable plan view</label>
+      <div style="margin-bottom:8px;">
+        <select id="plan-level">
+          <option value="">Välj level</option>
+        </select>
+      </div>
+      <div class="mini-hint">Snitt: 1.2 m över vald nivå</div>
+    </div>
     <div id="aps-ribbon" aria-label="Viewer tools">
+      <button id="tool-map" class="aps-btn" aria-label="Plan view">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+          <path d="M4 6l6-2 4 2 6-2v14l-6 2-4-2-6 2z" />
+          <path d="M10 4v14M14 6v14" />
+        </svg>
+      </button>
       <button id="tool-clip" class="aps-btn" aria-label="Section/Clip">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
           <path d="M4 6h16M8 6v12M4 18h16" />
+        </svg>
+      </button>
+      <button id="tool-camera" class="aps-btn" aria-label="Perspective / Orthographic">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+          <path d="M4 7h10l4 3v7H4z" />
+          <path d="M8 10h2" />
         </svg>
       </button>
     </div>
@@ -1311,8 +1434,38 @@ if (dom.toolMeasure) {
     console.log("[tool] measure toggle");
   });
 }
+if (dom.toolMap && dom.planPanel) {
+  dom.toolMap.addEventListener("click", () => {
+    dom.planPanel.style.display = dom.planPanel.style.display === "none" ? "block" : "none";
+    dom.toolMap.classList.toggle("active");
+  });
+}
 if (dom.toolFit) dom.toolFit.addEventListener("click", fitToView);
 if (dom.toolReset) dom.toolReset.addEventListener("click", resetCamera);
+const setCameraToggleIcon = (mode) => {
+  if (!dom.toolCamera) return;
+  const isOrtho = mode === "ortho";
+  dom.toolCamera.innerHTML = isOrtho
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+         <rect x="4" y="5" width="16" height="14" rx="2" />
+         <path d="M9 9h6M9 13h6" />
+       </svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+         <path d="M4 7h10l4 3v7H4z" />
+         <path d="M8 10h2" />
+       </svg>`;
+};
+
+if (dom.toolCamera) {
+  setCameraToggleIcon(cameraRig.mode);
+  dom.toolCamera.addEventListener("click", () => {
+    cameraRig.toggle(controls.target);
+    controls.object = cameraRig.active;
+    controls.update();
+    dom.toolCamera.classList.toggle("active", cameraRig.mode === "ortho");
+    setCameraToggleIcon(cameraRig.mode);
+  });
+}
 if (dom.toolSettings) {
   dom.toolSettings.addEventListener("click", () => {
     if (!dom.settingsPanel) return;
@@ -1394,7 +1547,7 @@ if (cubeRenderer && dom.viewCubeCanvas) {
     cameraTween = {
       start: performance.now(),
       duration: 450,
-      fromPos: camera.position.clone(),
+      fromPos: cameraRig.active.position.clone(),
       toPos: center.clone().add(dir.multiplyScalar(distance)),
       fromTarget: controls.target.clone(),
       toTarget: center.clone()
@@ -1409,5 +1562,17 @@ if (dom.launcherBtn) {
     const base = import.meta.env.BASE_URL || "/";
     const url = `${base}launcher/launcher.html`;
     window.open(url, "_blank", "noopener");
+  });
+}
+if (dom.planEnable) {
+  dom.planEnable.addEventListener("change", (event) => {
+    setPlanMode(event.target.checked);
+    if (event.target.checked) applyPlanSelection();
+  });
+}
+if (dom.planLevel) {
+  dom.planLevel.addEventListener("change", (event) => {
+    planLevelSelection = event.target.value || null;
+    applyPlanSelection();
   });
 }

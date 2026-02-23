@@ -118,8 +118,8 @@
         right: 12px;
         bottom: 12px;
         width: 240px;
-        background: rgba(255,255,255,0.95);
-        border: 1px solid rgba(0,0,0,0.12);
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.08);
         border-radius: 12px;
         box-shadow: 0 8px 20px rgba(0,0,0,0.16);
         padding: 10px;
@@ -146,9 +146,9 @@
         width: 100%;
         height: auto;
         border-radius: 8px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #e6e6e6;
         display: block;
-        background: #f7f7f7;
+        background: #ffffff;
       }
       #mini-map .mini-hint {
         font-size: 11px;
@@ -212,6 +212,39 @@
         gap: 8px;
         align-items: center;
         margin: 6px 0;
+      }
+      #plan-panel {
+        position: fixed;
+        right: 12px;
+        top: 120px;
+        width: 240px;
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.12);
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.16);
+        padding: 12px;
+        z-index: 10;
+        display: none;
+        color: #1d1f2b;
+        font-size: 12px;
+      }
+      #plan-panel h4 {
+        margin: 0 0 8px;
+        font-size: 13px;
+      }
+      #plan-panel label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      #plan-panel select {
+        width: 100%;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #d7dbe3;
+        background: #ffffff;
+        font-size: 12px;
       }
       header {
         display: flex;
@@ -520,6 +553,16 @@
         <canvas id="mini-map-canvas" width="220" height="220"></canvas>
         <div class="mini-hint">Klicka/drag för att flytta.</div>
       </div>
+      <div id="plan-panel">
+        <h4>2D Plan View</h4>
+        <label><input id="plan-enable" type="checkbox" /> Enable plan view</label>
+        <div style="margin-bottom:8px;">
+          <select id="plan-level">
+            <option value="">Välj level</option>
+          </select>
+        </div>
+        <div class="mini-hint">Snitt: 1.2 m över vald nivå</div>
+      </div>
       <div id="ifc-progress-container">
         <div id="ifc-progress-bar"></div>
         <span id="ifc-progress-text"></span>
@@ -554,9 +597,21 @@
           <path d="M13 7l4 4" />
         </svg>
       </button>
+      <button id="tool-map" class="aps-btn" aria-label="Plan view">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+          <path d="M4 6l6-2 4 2 6-2v14l-6 2-4-2-6 2z" />
+          <path d="M10 4v14M14 6v14" />
+        </svg>
+      </button>
       <button id="tool-clip" class="aps-btn" aria-label="Section/Clip">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
           <path d="M4 6h16M8 6v12M4 18h16" />
+        </svg>
+      </button>
+      <button id="tool-camera" class="aps-btn" aria-label="Perspective / Orthographic">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+          <path d="M4 7h10l4 3v7H4z" />
+          <path d="M8 10h2" />
         </svg>
       </button>
       <button id="tool-fit" class="aps-btn" aria-label="Fit to view">

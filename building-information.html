@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Building information</title>
+    <style>
+      :root {
+        --bg: #0f1226;
+        --panel: #171a34;
+        --panel-2: #1f2346;
+        --text: #f5f7ff;
+        --muted: rgba(245,247,255,0.65);
+        --accent: #7bdff6;
+        --accent-2: #ffd36e;
+        --light-panel: #f8f9fb;
+        --light-text: #1d1f2b;
+        --light-border: #d7dbe3;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Inter", "SF Pro", system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .btn {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 14px;
+        background: var(--accent);
+        color: #081018;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn.secondary {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid rgba(123,223,246,0.2);
+      }
+      #export-btn.btn.secondary {
+        background: #4a90e2;
+        color: #ffffff;
+        border-radius: 6px;
+        border: none;
+      }
+      .btn:disabled {
+        background: #3a3e56;
+        color: #8489a6;
+        cursor: not-allowed;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .demo-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(123,223,246,0.15);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .info-page {
+        min-height: 100vh;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
+      }
+      .info-header {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .info-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .info-card {
+        background: var(--panel);
+        border: 1px solid var(--panel-2);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 10px 24px rgba(8, 16, 24, 0.25);
+      }
+      .info-card h3 {
+        margin: 0 0 6px 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .info-card p {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .info-section {
+        background: var(--panel);
+        border-radius: 14px;
+        border: 1px solid var(--panel-2);
+        padding: 16px;
+      }
+      .info-section h2 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+      }
+      .info-accordion {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .info-accordion details {
+        background: rgba(16, 20, 40, 0.65);
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.08);
+        padding: 12px 14px;
+      }
+      .info-accordion summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .info-accordion table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 12px;
+      }
+      .info-accordion td {
+        padding: 6px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      .info-accordion td:first-child {
+        color: var(--muted);
+        width: 45%;
+        font-weight: 600;
+      }
+      @media (max-width: 780px) {
+        .info-page { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="info-page">
+      <div class="info-header">
+        <div class="demo-badge">Demo data (mock) – not from IFC</div>
+        <h1>Building information</h1>
+        <div class="hint">Multi-residential building (demo)</div>
+      </div>
+      <div class="info-actions">
+        <button id="launcher-btn" class="btn secondary" type="button">Launcher</button>
+        <button id="export-btn" class="btn secondary" type="button">Exportera HTML</button>
+        <button id="info-back" class="btn secondary" type="button">Back to viewer</button>
+        <button id="info-download" class="btn secondary" type="button">Download JSON</button>
+        <div id="status" class="hint"></div>
+      </div>
+      <section class="info-section">
+        <h2>Key facts</h2>
+        <div class="info-grid" id="info-grid"></div>
+      </section>
+      <section class="info-section">
+        <h2>More information</h2>
+        <div class="info-accordion" id="info-accordion"></div>
+      </section>
+    </section>
+
+    <script type="module" src="/src/building-info.js"></script>
+  </body>
+</html>
